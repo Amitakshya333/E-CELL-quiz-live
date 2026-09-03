@@ -1,0 +1,32 @@
+{
+  "hosting": {
+    "site": "ecellquiz",
+    "public": "dist/client",
+    "predeploy": [
+      "powershell -Command \"Copy-Item dist/client/_shell.html dist/client/index.html -Force\""
+    ],
+    "ignore": [
+      "firebase.json",
+      "**/.*",
+      "**/node_modules/**"
+    ],
+    "cleanUrls": true,
+    "rewrites": [
+      {
+        "source": "**",
+        "destination": "/index.html"
+      }
+    ],
+    "headers": [
+      {
+        "source": "**/*.@(jpg|jpeg|gif|png|svg|webp|js|css|woff2|woff)",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "max-age=31536000"
+          }
+        ]
+      }
+    ]
+  }
+}

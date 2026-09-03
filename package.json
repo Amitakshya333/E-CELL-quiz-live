@@ -10,7 +10,9 @@
     "preview": "vite preview",
     "lint": "eslint .",
     "format": "prettier --write .",
-    "test": "node --experimental-strip-types --test tests/scoring.test.ts"
+    "test": "node --experimental-strip-types --test tests/scoring.test.ts",
+    "build:client": "vite build && powershell -Command \"Copy-Item dist/client/_shell.html dist/client/index.html -Force\"",
+    "deploy:firebase": "npm run build && powershell -Command \"Copy-Item dist/client/_shell.html dist/client/index.html -Force\" && firebase deploy --only hosting:ecellquiz"
   },
   "overrides": {
     "rolldown": "1.2.1"
@@ -56,6 +58,7 @@
     "cmdk": "^1.1.1",
     "date-fns": "^4.1.0",
     "embla-carousel-react": "^8.6.0",
+    "firebase": "^12.18.0",
     "input-otp": "^1.4.2",
     "lucide-react": "^0.575.0",
     "qrcode": "^1.5.4",

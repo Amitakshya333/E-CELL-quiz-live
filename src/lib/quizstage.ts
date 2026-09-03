@@ -29,7 +29,27 @@ const LOCAL_HOST_STORAGE_KEY = "quizstage-local-host";
 const LOCAL_ROOMS_STORAGE_KEY = "quizstage-local-rooms";
 
 export async function getCurrentUser(): Promise<any | null> {
-  // 1. Try Supabase session
+  // 1. Check Firebase Auth session
+  if (typeof window !== "undefined") {
+    try {
+      const { auth } = await import("@/integrations/firebase/client");
+      if (auth.currentUser) {
+        return {
+          id: auth.currentUser.uid,
+          email: auth.currentUser.email,
+          user_metadata: {
+            name: auth.currentUser.displayName || "E-Cell Host",
+            avatar_url: auth.currentUser.photoURL,
+          },
+          role: "authenticated",
+        };
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  // 2. Try Supabase session
   try {
     const { data, error } = await supabase.auth.getUser();
     if (!error && data?.user) return data.user;
@@ -37,7 +57,7 @@ export async function getCurrentUser(): Promise<any | null> {
     // Ignore error and fall back
   }
 
-  // 2. Check local host session
+  // 3. Check local host session
   if (typeof window !== "undefined") {
     try {
       const stored = localStorage.getItem(LOCAL_HOST_STORAGE_KEY);
@@ -53,7 +73,7 @@ export async function getCurrentUser(): Promise<any | null> {
   return null;
 }
 
-export function loginAsLocalHost(email = "host@quizstage.dev", name = "Local Organizer"): LocalUser {
+export function loginAsLocalHost(email = "host@ecell.suiit.ac.in", name = "E-Cell Organizer"): LocalUser {
   const localUser: LocalUser = {
     id: "10000000-0000-4000-8000-000000000001",
     email,
@@ -62,19 +82,27 @@ export function loginAsLocalHost(email = "host@quizstage.dev", name = "Local Org
     is_local: true,
   };
   if (typeof window !== "undefined") {
-    localStorage.setItem(LOCAL_HOST_STORAGE_KEY, JSON.stringify(localUser));
+    try {
+      localStorage.setItem(LOCAL_HOST_STORAGE_KEY, JSON.stringify(localUser));
+    } catch {}
   }
   return localUser;
 }
 
-export async function signOutUser() {
-  if (typeof window !== "undefined") {
-    localStorage.removeItem(LOCAL_HOST_STORAGE_KEY);
-  }
+export async function signOutUser(): Promise<void> {
+  try {
+    const { signOutFirebase } = await import("@/integrations/firebase/client");
+    await signOutFirebase();
+  } catch {}
+
   try {
     await supabase.auth.signOut();
-  } catch {
-    // ignore
+  } catch {}
+
+  if (typeof window !== "undefined") {
+    try {
+      localStorage.removeItem(LOCAL_HOST_STORAGE_KEY);
+    } catch {}
   }
 }
 

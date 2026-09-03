@@ -4,13 +4,20 @@ import { Button } from "@/components/ui/button";
 
 export function QuizStageMark() {
   return (
-    <Link to="/" className="group inline-flex items-center gap-3">
-      <span className="grid h-9 w-9 place-items-center bg-brand text-brand-foreground transition-transform group-hover:rotate-3 rounded-lg shadow-sm">
-        <Clapperboard className="h-5 w-5" />
-      </span>
-      <span className="font-display text-xl font-black uppercase tracking-tight">
-        QuizStage<span className="text-brand">.</span>
-      </span>
+    <Link to="/" className="group inline-flex items-center gap-2.5">
+      <img
+        src="/ecell-logo.png"
+        alt="E-Cell SUIIT Logo"
+        className="h-9 w-9 rounded-lg object-contain bg-white p-0.5 border border-border shadow-sm transition-transform group-hover:scale-105"
+      />
+      <div className="flex flex-col">
+        <span className="font-display text-lg font-black uppercase tracking-tight leading-none">
+          E-Cell Quiz<span className="text-brand">.</span>
+        </span>
+        <span className="font-mono text-[9px] uppercase tracking-[0.18em] text-muted-foreground font-semibold">
+          SUIIT Campus
+        </span>
+      </div>
     </Link>
   );
 }
