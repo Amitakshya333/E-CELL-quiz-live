@@ -77,15 +77,33 @@ function HomePage() {
                 <h2 className="font-display text-5xl font-black uppercase leading-[0.86] sm:text-7xl">Can you<br />crack the<br /><span className="text-brand">startup?</span></h2>
                 <p className="mt-7 max-w-xs text-sm leading-6 text-paper/60">A founder challenge for teams who know their runway from their roadmap.</p>
               </div>
-              <div className="flex items-end justify-between border-t border-paper/20 pt-5">
-                <div><p className="text-[10px] uppercase tracking-[0.18em] text-paper/50">Room code</p><p className="mt-1 font-display text-3xl font-bold tracking-[0.18em]">QZ7K2M</p></div>
-                <div className="grid grid-cols-3 gap-1.5" aria-label="Join code graphic">{Array.from({ length: 9 }).map((_, i) => <span key={i} className={`h-2 w-2 ${i % 3 === 0 ? "bg-brand" : "bg-paper/40"}`} />)}</div>
+              <div className="flex items-center justify-between border-t border-paper/20 pt-5">
+                <div className="flex items-center gap-3">
+                  <div className="h-9 w-9 rounded-md bg-brand/20 border border-brand/40 flex items-center justify-center text-brand">
+                    <Smartphone className="h-4 w-4" />
+                  </div>
+                  <div>
+                    <p className="text-[10px] uppercase tracking-[0.18em] text-paper/50">Live Audience Join</p>
+                    <p className="font-display text-sm font-bold tracking-wider text-paper uppercase">Mobile Browser Ready</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
+                  <span className="font-mono text-xs uppercase tracking-[0.14em] text-paper/70 font-semibold">Ready</span>
+                </div>
               </div>
             </div>
           </div>
-          <div className="absolute -bottom-2 left-0 max-w-[190px] border border-border bg-background p-4 shadow-xl sm:left-4">
-            <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-muted-foreground">Room energy</p>
-            <div className="mt-4 flex items-end gap-1.5">{[36, 52, 43, 70, 58, 84, 63, 96].map((height, i) => <span key={i} className={`w-2 ${i > 5 ? "bg-brand" : "bg-foreground/25"}`} style={{ height }} />)}</div>
+          <div className="hidden sm:block absolute -bottom-3 right-2 sm:right-6 max-w-[190px] border border-border bg-card/95 backdrop-blur p-3.5 shadow-2xl rounded-lg">
+            <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-muted-foreground flex items-center justify-between">
+              <span>Room energy</span>
+              <span className="text-emerald-500 font-mono text-[10px]">98%</span>
+            </p>
+            <div className="mt-3 flex items-end gap-1.5">
+              {[24, 36, 28, 44, 38, 54, 42, 60].map((height, i) => (
+                <span key={i} className={`w-2 rounded-t-sm ${i > 4 ? "bg-brand" : "bg-muted-foreground/30"}`} style={{ height }} />
+              ))}
+            </div>
           </div>
         </div>
       </section>

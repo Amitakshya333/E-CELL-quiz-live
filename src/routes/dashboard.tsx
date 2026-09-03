@@ -107,12 +107,14 @@ function DashboardPage() {
   async function handleDelete(quiz: QuizSummary) {
     if (!confirm(`Are you sure you want to delete "${quiz.title}"?`)) return;
     setActionBusy(quiz.id);
+    // 1. Optimistic removal: disappears immediately from UI
+    setQuizzes((prev) => prev.filter((q) => q.id !== quiz.id));
     try {
       await deleteQuiz(quiz.id);
       toast.success("Quiz deleted.");
-      await loadData();
     } catch (err) {
       toast.error("Failed to delete quiz.");
+      await loadData();
     } finally {
       setActionBusy(null);
     }

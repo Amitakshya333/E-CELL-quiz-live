@@ -21,7 +21,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { AppHeader } from "@/components/quizstage-shell";
 import { SlideRenderer, type SlideData } from "@/components/slides/slide-renderer";
-import { createRoom, getCurrentUser } from "@/lib/quizstage";
+import { createRoom, getCurrentUser, DEMO_QUIZ_ID, getLocalQuizById, getLocalSlides, saveLocalSlides } from "@/lib/quizstage";
 import { supabase } from "@/integrations/supabase/client";
 
 export const Route = createFileRoute("/quizzes/$quizId/slides")({
@@ -63,38 +63,67 @@ function SlideManagerPage() {
           return;
         }
 
-        // Fetch quiz
-        const { data: quiz, error: quizErr } = await supabase
-          .from("quizzes")
-          .select("id,title,owner_id")
-          .eq("id", quizId)
-          .maybeSingle();
+        let title = "Quiz Presentation";
+        let mapped: SlideData[] = [];
 
-        if (quizErr || !quiz) {
+        try {
+          const { data: quiz } = await supabase
+            .from("quizzes")
+            .select("id,title,owner_id")
+            .eq("id", quizId)
+            .maybeSingle();
+
+          if (quiz?.title) title = quiz.title;
+
+          const { data: slideRows } = await supabase
+            .from("slides")
+            .select("id,slide_number,page_number,slide_type,question_metadata(correct_answer,points,timer_seconds)")
+            .eq("quiz_id", quizId)
+            .order("slide_number");
+
+          if (slideRows && slideRows.length > 0) {
+            mapped = slideRows.map((s: any) => ({
+              id: s.id,
+              slide_number: s.slide_number,
+              page_number: s.page_number,
+              slide_type: s.slide_type,
+              question_metadata: s.question_metadata?.[0] || s.question_metadata || null,
+            }));
+          }
+        } catch {
+          // Cloud error fallback
+        }
+
+        if (mapped.length === 0) {
+          const localQuiz = getLocalQuizById(quizId);
+          if (localQuiz) {
+            title = localQuiz.title;
+            const localSlides = getLocalSlides(quizId);
+            if (localSlides) mapped = localSlides;
+          }
+        }
+
+        if (mapped.length === 0 && quizId === DEMO_QUIZ_ID) {
+          title = "CAN YOU CRACK THE STARTUP?";
+          mapped = [
+            { id: "30000000-0000-4000-8000-000000000001", slide_number: 1, page_number: 1, slide_type: "normal" },
+            { id: "30000000-0000-4000-8000-000000000002", slide_number: 2, page_number: 2, slide_type: "normal" },
+            { id: "30000000-0000-4000-8000-000000000003", slide_number: 3, page_number: 3, slide_type: "join" },
+            { id: "30000000-0000-4000-8000-000000000004", slide_number: 4, page_number: 4, slide_type: "quiz", question_metadata: { correct_answer: "C", points: 200, timer_seconds: 30 } },
+            { id: "30000000-0000-4000-8000-000000000005", slide_number: 5, page_number: 5, slide_type: "quiz", question_metadata: { correct_answer: "B", points: 300, timer_seconds: 20 } },
+            { id: "30000000-0000-4000-8000-000000000006", slide_number: 6, page_number: 6, slide_type: "leaderboard" },
+            { id: "30000000-0000-4000-8000-000000000007", slide_number: 7, page_number: 7, slide_type: "quiz", question_metadata: { correct_answer: "D", points: 500, timer_seconds: 45 } },
+            { id: "30000000-0000-4000-8000-000000000008", slide_number: 8, page_number: 8, slide_type: "results" },
+          ];
+        }
+
+        if (mapped.length === 0) {
           toast.error("Quiz not found.");
           void navigate({ to: "/dashboard" });
           return;
         }
 
-        setQuizTitle(quiz.title);
-
-        // Fetch slides & metadata
-        const { data: slideRows, error: slidesErr } = await supabase
-          .from("slides")
-          .select("id,slide_number,page_number,slide_type,question_metadata(correct_answer,points,timer_seconds)")
-          .eq("quiz_id", quizId)
-          .order("slide_number");
-
-        if (slidesErr) throw slidesErr;
-
-        const mapped: SlideData[] = (slideRows ?? []).map((s: any) => ({
-          id: s.id,
-          slide_number: s.slide_number,
-          page_number: s.page_number,
-          slide_type: s.slide_type,
-          question_metadata: s.question_metadata?.[0] || s.question_metadata || null,
-        }));
-
+        setQuizTitle(title);
         setSlides(mapped);
 
         if (mapped.length > 0 && mapped[0]) {
@@ -183,6 +212,7 @@ function SlideManagerPage() {
               }
             : null,
       };
+      saveLocalSlides(quizId, updatedSlides);
       setSlides(updatedSlides);
 
       toast.success(`Slide ${selectedSlide.slide_number} configuration saved.`);

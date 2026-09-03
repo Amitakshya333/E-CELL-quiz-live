@@ -103,7 +103,7 @@ function JoinPage() {
                 required
                 minLength={6}
                 maxLength={6}
-                placeholder="QZ7K2M"
+                placeholder="ABC123"
                 autoFocus
               />
             </label>

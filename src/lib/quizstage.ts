@@ -12,6 +12,7 @@ export type QuizSummary = {
   questionCount: number;
   pageCount: number;
   fileName: string | null;
+  owner_id?: string | null;
 };
 
 export type LocalUser = {
@@ -102,7 +103,78 @@ export function getLocalRoomByCode(code: string) {
   return getLocalRooms().find((r) => r.room_code?.toUpperCase() === code?.toUpperCase()) || null;
 }
 
+const DELETED_QUIZZES_KEY = "quizstage-deleted-quizzes";
+const LOCAL_QUIZZES_KEY = "quizstage-local-quizzes";
+const LOCAL_SLIDES_PREFIX = "quizstage-local-slides-";
+
+export function getDeletedQuizIds(): string[] {
+  try {
+    const raw = localStorage.getItem(DELETED_QUIZZES_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+export function markQuizDeleted(quizId: string) {
+  try {
+    const ids = getDeletedQuizIds();
+    if (!ids.includes(quizId)) {
+      ids.push(quizId);
+      localStorage.setItem(DELETED_QUIZZES_KEY, JSON.stringify(ids));
+    }
+    const local = getLocalQuizzes().filter((q) => q.id !== quizId);
+    saveLocalQuizzes(local);
+  } catch {}
+}
+
+export function getLocalQuizzes(): QuizSummary[] {
+  try {
+    const raw = localStorage.getItem(LOCAL_QUIZZES_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+export function saveLocalQuiz(quiz: QuizSummary) {
+  try {
+    const list = getLocalQuizzes().filter((q) => q.id !== quiz.id);
+    list.unshift(quiz);
+    saveLocalQuizzes(list);
+  } catch {}
+}
+
+export function saveLocalQuizzes(quizzes: QuizSummary[]) {
+  try {
+    localStorage.setItem(LOCAL_QUIZZES_KEY, JSON.stringify(quizzes));
+  } catch {}
+}
+
+export function getLocalQuizById(quizId: string): QuizSummary | null {
+  return getLocalQuizzes().find((q) => q.id === quizId) || null;
+}
+
+export function getLocalSlides(quizId: string): any[] | null {
+  try {
+    const raw = localStorage.getItem(LOCAL_SLIDES_PREFIX + quizId);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+export function saveLocalSlides(quizId: string, slides: any[]) {
+  try {
+    localStorage.setItem(LOCAL_SLIDES_PREFIX + quizId, JSON.stringify(slides));
+  } catch {}
+}
+
 export async function getQuizSummaries(ownerId: string) {
+  const deletedIds = getDeletedQuizIds();
+  const localList = getLocalQuizzes().filter((q) => !deletedIds.includes(q.id));
+
+  let cloudSummaries: QuizSummary[] = [];
   try {
     // Fetch user quizzes OR public demo quizzes
     const { data: quizzes, error } = await supabase
@@ -112,45 +184,66 @@ export async function getQuizSummaries(ownerId: string) {
       .order("created_at", { ascending: false });
 
     if (!error && quizzes && quizzes.length > 0) {
-      const summaries = await Promise.all(
-        quizzes.map(async (quiz) => {
-          const [{ data: slides }, { data: presentation }, { data: questions }] = await Promise.all([
-            supabase.from("slides").select("id").eq("quiz_id", quiz.id),
-            quiz.presentation_id
-              ? supabase.from("presentations").select("page_count,original_file_name").eq("id", quiz.presentation_id).maybeSingle()
-              : Promise.resolve({ data: null }),
-            supabase.from("slides").select("id").eq("quiz_id", quiz.id).eq("slide_type", "quiz"),
-          ]);
+      cloudSummaries = (
+        await Promise.all(
+          quizzes.map(async (quiz) => {
+            const [{ data: slides }, { data: presentation }, { data: questions }] = await Promise.all([
+              supabase.from("slides").select("id").eq("quiz_id", quiz.id),
+              quiz.presentation_id
+                ? supabase.from("presentations").select("page_count,original_file_name").eq("id", quiz.presentation_id).maybeSingle()
+                : Promise.resolve({ data: null }),
+              supabase.from("slides").select("id").eq("quiz_id", quiz.id).eq("slide_type", "quiz"),
+            ]);
 
-          return {
-            ...quiz,
-            slideCount: slides?.length ?? 8,
-            questionCount: questions?.length ?? 3,
-            pageCount: presentation?.page_count ?? slides?.length ?? 8,
-            fileName: presentation?.original_file_name ?? "can-you-crack-the-startup.pdf",
-          } satisfies QuizSummary;
-        })
-      );
-      return summaries;
+            return {
+              ...quiz,
+              slideCount: slides?.length ?? 8,
+              questionCount: questions?.length ?? 3,
+              pageCount: presentation?.page_count ?? slides?.length ?? 8,
+              fileName: presentation?.original_file_name ?? "can-you-crack-the-startup.pdf",
+            } satisfies QuizSummary;
+          })
+        )
+      ).filter((s) => !deletedIds.includes(s.id));
     }
   } catch {
     // Cloud query failed
   }
 
-  // Fallback to built-in Demo Quiz Summary
-  return [
-    {
-      id: DEMO_QUIZ_ID,
-      title: "CAN YOU CRACK THE STARTUP?",
-      description: "A fast-paced founder challenge for teams who know their runway from their roadmap.",
-      status: "ready",
-      created_at: new Date().toISOString(),
-      slideCount: 8,
-      questionCount: 3,
-      pageCount: 8,
-      fileName: "can-you-crack-the-startup.pdf",
-    } satisfies QuizSummary,
-  ];
+  // Combine local and cloud quizzes without duplicates, strictly omitting deleted quizzes
+  const combinedMap = new Map<string, QuizSummary>();
+  for (const q of localList) {
+    if (!deletedIds.includes(q.id)) {
+      combinedMap.set(q.id, q);
+    }
+  }
+  for (const q of cloudSummaries) {
+    if (!deletedIds.includes(q.id)) {
+      combinedMap.set(q.id, q);
+    }
+  }
+
+  const result = Array.from(combinedMap.values());
+  if (result.length > 0) return result;
+
+  // Fallback to built-in Demo Quiz Summary if not explicitly deleted
+  if (!deletedIds.includes(DEMO_QUIZ_ID)) {
+    return [
+      {
+        id: DEMO_QUIZ_ID,
+        title: "CAN YOU CRACK THE STARTUP?",
+        description: "A fast-paced founder challenge for teams who know their runway from their roadmap.",
+        status: "ready",
+        created_at: new Date().toISOString(),
+        slideCount: 8,
+        questionCount: 3,
+        pageCount: 8,
+        fileName: "can-you-crack-the-startup.pdf",
+      } satisfies QuizSummary,
+    ];
+  }
+
+  return [];
 }
 
 function makeRoomCode() {
@@ -211,12 +304,13 @@ export async function createQuizFromPdf(file: File, ownerId: string) {
   const detectedPages = text.match(/\/Type\s*\/Page(?!s)/g)?.length ?? 1;
   const pageCount = Math.max(1, detectedPages);
   const title = file.name.replace(/\.pdf$/i, "").replace(/[-_]+/g, " ").trim() || "Untitled quiz";
+  let createdQuizId: string = crypto.randomUUID();
 
   try {
-    const { data: presentation, error: presentationError } = await supabase
+    const { data: presentation } = await supabase
       .from("presentations")
       .insert({
-        owner_id: ownerId,
+        owner_id: ownerId as any,
         title,
         original_file_name: file.name,
         original_file_path: path,
@@ -227,11 +321,11 @@ export async function createQuizFromPdf(file: File, ownerId: string) {
       .single();
 
     if (presentation) {
-      const { data: quiz, error: quizError } = await supabase
+      const { data: quiz } = await supabase
         .from("quizzes")
         .insert({
-          owner_id: ownerId,
-          presentation_id: presentation.id,
+          owner_id: ownerId as any,
+          presentation_id: presentation.id as any,
           title: title.toUpperCase(),
           status: "draft",
         })
@@ -239,83 +333,149 @@ export async function createQuizFromPdf(file: File, ownerId: string) {
         .single();
 
       if (quiz) {
+        createdQuizId = quiz.id;
         const slides = Array.from({ length: pageCount }, (_, index) => ({
-          quiz_id: quiz.id,
+          quiz_id: quiz.id as any,
           slide_number: index + 1,
           page_number: index + 1,
           slide_type: "normal" as const,
         }));
 
-        await supabase.from("slides").insert(slides);
-        return quiz.id;
+        await supabase.from("slides").insert(slides as any);
       }
     }
   } catch {
     // Cloud insert fallback
   }
 
-  return DEMO_QUIZ_ID;
+  // Always persist locally for offline / Firebase / local host reliability
+  const localQuiz: QuizSummary = {
+    id: createdQuizId,
+    title: title.toUpperCase(),
+    description: `Presentation uploaded from ${file.name}`,
+    status: "draft",
+    created_at: new Date().toISOString(),
+    slideCount: pageCount,
+    questionCount: 0,
+    pageCount,
+    fileName: file.name,
+    owner_id: ownerId,
+  };
+  saveLocalQuiz(localQuiz);
+
+  const localSlides = Array.from({ length: pageCount }, (_, index) => ({
+    id: `slide-${createdQuizId}-${index + 1}`,
+    slide_number: index + 1,
+    page_number: index + 1,
+    slide_type: index === 0 ? "normal" : index === 1 ? "join" : "normal",
+    question_metadata: null,
+  }));
+  saveLocalSlides(createdQuizId, localSlides);
+
+  return createdQuizId;
 }
 
 export async function duplicateQuiz(quizId: string, ownerId: string) {
-  try {
-    const { data: originalQuiz } = await supabase.from("quizzes").select("*").eq("id", quizId).single();
-    if (!originalQuiz) return quizId;
+  const newId = crypto.randomUUID();
+  let originalTitle = "Quiz";
+  let pageCount = 8;
+  let fileName = "deck.pdf";
 
-    const { data: newQuiz } = await supabase
-      .from("quizzes")
-      .insert({
-        owner_id: ownerId,
-        presentation_id: originalQuiz.presentation_id,
-        title: `${originalQuiz.title} (COPY)`,
-        description: originalQuiz.description,
-        status: "draft",
-      })
-      .select("id")
-      .single();
-
-    if (newQuiz) {
-      const { data: originalSlides } = await supabase
-        .from("slides")
-        .select("id,slide_number,page_number,slide_type,question_metadata(correct_answer,points,timer_seconds)")
-        .eq("quiz_id", quizId)
-        .order("slide_number");
-
-      if (originalSlides) {
-        for (const s of originalSlides) {
-          const { data: newSlide } = await supabase
-            .from("slides")
-            .insert({
-              quiz_id: newQuiz.id,
-              slide_number: s.slide_number,
-              page_number: s.page_number,
-              slide_type: s.slide_type,
-            })
-            .select("id")
-            .single();
-
-          const meta = Array.isArray(s.question_metadata) ? s.question_metadata[0] : s.question_metadata;
-          if (newSlide && meta) {
-            await supabase.from("question_metadata").insert({
-              slide_id: newSlide.id,
-              correct_answer: meta.correct_answer,
-              points: meta.points,
-              timer_seconds: meta.timer_seconds,
-            });
-          }
-        }
-      }
-      return newQuiz.id;
-    }
-  } catch {
-    // ignore
+  // Check local first
+  const localOriginal = getLocalQuizById(quizId);
+  if (localOriginal) {
+    originalTitle = localOriginal.title;
+    pageCount = localOriginal.pageCount;
+    fileName = localOriginal.fileName ?? "deck.pdf";
   }
 
-  return quizId;
+  try {
+    const { data: originalQuiz } = await supabase.from("quizzes").select("*").eq("id", quizId).single();
+    if (originalQuiz && originalQuiz.title) {
+      originalTitle = originalQuiz.title;
+      const { data: newQuiz } = await supabase
+        .from("quizzes")
+        .insert({
+          owner_id: ownerId,
+          presentation_id: originalQuiz.presentation_id,
+          title: `${originalQuiz.title} (COPY)`,
+          description: originalQuiz.description,
+          status: "draft",
+        })
+        .select("id")
+        .single();
+
+      if (newQuiz) {
+        const { data: originalSlides } = await supabase
+          .from("slides")
+          .select("id,slide_number,page_number,slide_type,question_metadata(correct_answer,points,timer_seconds)")
+          .eq("quiz_id", quizId)
+          .order("slide_number");
+
+        if (originalSlides) {
+          for (const s of originalSlides) {
+            const { data: newSlide } = await supabase
+              .from("slides")
+              .insert({
+                quiz_id: newQuiz.id,
+                slide_number: s.slide_number,
+                page_number: s.page_number,
+                slide_type: s.slide_type,
+              })
+              .select("id")
+              .single();
+
+            const meta = Array.isArray(s.question_metadata) ? s.question_metadata[0] : s.question_metadata;
+            if (newSlide && meta) {
+              await supabase.from("question_metadata").insert({
+                slide_id: newSlide.id,
+                correct_answer: meta.correct_answer,
+                points: meta.points,
+                timer_seconds: meta.timer_seconds,
+              });
+            }
+          }
+        }
+        return newQuiz.id;
+      }
+    }
+  } catch {
+    // Cloud duplicate fallback
+  }
+
+  // Local duplicate fallback
+  const duplicated: QuizSummary = {
+    id: newId,
+    title: `${originalTitle} (COPY)`,
+    description: `Copy of ${originalTitle}`,
+    status: "draft",
+    created_at: new Date().toISOString(),
+    slideCount: pageCount,
+    questionCount: localOriginal?.questionCount ?? 0,
+    pageCount,
+    fileName,
+    owner_id: ownerId,
+  };
+  saveLocalQuiz(duplicated);
+  const slides = getLocalSlides(quizId);
+  if (slides) saveLocalSlides(newId, slides);
+
+  return newId;
 }
 
 export async function deleteQuiz(quizId: string) {
+  // 1. Mark in permanent deleted list
+  markQuizDeleted(quizId);
+
+  // 2. Cascade delete from Supabase if rows exist
   try {
+    const { data: slides } = await supabase.from("slides").select("id").eq("quiz_id", quizId);
+    if (slides && slides.length > 0) {
+      const slideIds = slides.map((s) => s.id);
+      await supabase.from("question_metadata").delete().in("slide_id", slideIds);
+      await supabase.from("slides").delete().eq("quiz_id", quizId);
+    }
+    await supabase.from("rooms").delete().eq("quiz_id", quizId);
     await supabase.from("quizzes").delete().eq("id", quizId);
   } catch {
     // ignore
