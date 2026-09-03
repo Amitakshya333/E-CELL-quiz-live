@@ -40,13 +40,21 @@ function JoinPage() {
     setBusy(true);
     try {
       let targetCode = normalized;
-      const { data: room } = await supabase
-        .from("rooms")
-        .select("id,room_code,status")
-        .eq("room_code", normalized)
-        .maybeSingle();
+      let foundRoom = false;
 
-      if (!room) {
+      try {
+        const { data: room } = await supabase
+          .from("rooms")
+          .select("id,room_code,status")
+          .eq("room_code", normalized)
+          .maybeSingle();
+
+        if (room) foundRoom = true;
+      } catch {
+        // Supabase unavailable, check local
+      }
+
+      if (!foundRoom) {
         const local = getLocalRoomByCode(normalized);
         if (!local) {
           toast.error("That room code does not exist. Check the big screen!");

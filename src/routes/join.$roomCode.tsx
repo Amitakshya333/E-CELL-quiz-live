@@ -18,7 +18,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { QuizStageMark } from "@/components/quizstage-shell";
 import { supabase } from "@/integrations/supabase/client";
-import { getLocalRoomByCode } from "@/lib/quizstage";
+import { getLocalRoomByCode, getLocalSlides, getLocalQuizById } from "@/lib/quizstage";
 
 export const Route = createFileRoute("/join/$roomCode")({
   head: () => ({
@@ -137,6 +137,16 @@ export function ParticipantLivePage() {
           if (slideRows && slideRows.length > 0) slideList = slideRows as Slide[];
         } catch {
           // Ignore
+        }
+
+        if (slideList.length === 0) {
+          // Try loading from localStorage (user-created quizzes)
+          const localQuiz = getLocalQuizById(targetRoom.quiz_id);
+          if (localQuiz) setQuizTitle(localQuiz.title);
+          const localSlides = getLocalSlides(targetRoom.quiz_id);
+          if (localSlides && localSlides.length > 0) {
+            slideList = localSlides as Slide[];
+          }
         }
 
         if (slideList.length === 0) {

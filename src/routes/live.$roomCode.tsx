@@ -32,7 +32,7 @@ import {
 import { QuizStageMark } from "@/components/quizstage-shell";
 import { SlideRenderer, type SlideData } from "@/components/slides/slide-renderer";
 import { supabase } from "@/integrations/supabase/client";
-import { getLocalRoomByCode, saveLocalRoom, getCurrentUser } from "@/lib/quizstage";
+import { getLocalRoomByCode, saveLocalRoom, getCurrentUser, getLocalSlides, getLocalQuizById } from "@/lib/quizstage";
 
 export const Route = createFileRoute("/live/$roomCode")({
   head: () => ({
@@ -83,6 +83,7 @@ function LiveRoomPage() {
   const [participants, setParticipants] = useState<Participant[]>([]);
   const [scoringBusy, setScoringBusy] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [answers, setAnswers] = useState<Answer[]>([]);
 
   // Sync clock every 500ms
   useEffect(() => {
@@ -155,6 +156,16 @@ function LiveRoomPage() {
         if (answerRows) setAnswers(answerRows as Answer[]);
       } catch {
         // Local fallback
+      }
+
+      if (mappedSlides.length === 0) {
+        // Try loading from localStorage (user-created quizzes)
+        const localQuiz = getLocalQuizById(targetRoom.quiz_id);
+        if (localQuiz) setTitle(localQuiz.title);
+        const localSlides = getLocalSlides(targetRoom.quiz_id);
+        if (localSlides && localSlides.length > 0) {
+          mappedSlides = localSlides as SlideData[];
+        }
       }
 
       if (mappedSlides.length === 0) {
@@ -347,35 +358,67 @@ function LiveRoomPage() {
     setScoringBusy(true);
     try {
       const correctOption = currentSlide.question_metadata?.correct_answer;
-      const points = currentSlide.question_metadata?.points ?? 100;
+      const pts = currentSlide.question_metadata?.points ?? 100;
 
-      // Fetch fresh answers for this slide
-      const { data: latestAnswers } = await supabase
-        .from("answers")
-        .select("id,participant_id,selected_answer")
-        .eq("room_id", room.id)
-        .eq("slide_id", currentSlide.id);
+      // Use local answers state (populated via BroadcastChannel or Supabase realtime)
+      const slideAnswers = answers.filter(
+        (a) => a.selected_answer && (a as any).slide_id === currentSlide.id
+      );
 
-      if (latestAnswers && correctOption) {
+      // Also try Supabase as best-effort
+      let latestAnswers = slideAnswers;
+      try {
+        const { data } = await supabase
+          .from("answers")
+          .select("id,participant_id,selected_answer")
+          .eq("room_id", room.id)
+          .eq("slide_id", currentSlide.id);
+        if (data && data.length > 0) latestAnswers = data as any;
+      } catch {
+        // Use local answers
+      }
+
+      if (correctOption) {
+        const updatedParticipants = [...participants];
         for (const ans of latestAnswers) {
           const isCorrect = ans.selected_answer === correctOption;
-          const awarded = isCorrect ? points : 0;
+          const awarded = isCorrect ? pts : 0;
 
-          await supabase
-            .from("answers")
-            .update({ is_correct: isCorrect, points_awarded: awarded })
-            .eq("id", ans.id);
+          // Best-effort Supabase update
+          try {
+            await supabase
+              .from("answers")
+              .update({ is_correct: isCorrect, points_awarded: awarded })
+              .eq("id", ans.id);
+          } catch {}
 
           if (isCorrect) {
-            const part = participants.find((p) => p.id === ans.participant_id);
-            if (part) {
-              await supabase
-                .from("participants")
-                .update({ score: (part.score || 0) + points })
-                .eq("id", ans.participant_id);
+            const partIdx = updatedParticipants.findIndex((p) => p.id === (ans as any).participant_id);
+            if (partIdx >= 0) {
+              const newScore = (updatedParticipants[partIdx]!.score || 0) + pts;
+              updatedParticipants[partIdx] = { ...updatedParticipants[partIdx]!, score: newScore };
+
+              // Best-effort Supabase update
+              try {
+                await supabase
+                  .from("participants")
+                  .update({ score: newScore })
+                  .eq("id", (ans as any).participant_id);
+              } catch {}
             }
           }
         }
+        // Update local state with new scores
+        setParticipants(updatedParticipants.sort((a, b) => b.score - a.score));
+
+        // Broadcast score updates to participant tabs
+        try {
+          const bc = new BroadcastChannel(`quizstage-room-${room.room_code.toUpperCase()}`);
+          for (const p of updatedParticipants) {
+            bc.postMessage({ type: "PARTICIPANT_UPDATE", participant: { ...p, room_id: room.id } });
+          }
+          bc.close();
+        } catch {}
       }
 
       await updateRoom({

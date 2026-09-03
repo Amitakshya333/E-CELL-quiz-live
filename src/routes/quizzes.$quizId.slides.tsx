@@ -175,41 +175,11 @@ function SlideManagerPage() {
     }
   }
 
-  // Save current slide config to local state & database
   async function saveCurrentSlideConfig() {
     if (!selectedSlide) return;
     setSaving(true);
     try {
-      // 1. Update slide type
-      const { error: slideUpdateErr } = await supabase
-        .from("slides")
-        .update({ slide_type: currentType })
-        .eq("id", selectedSlide.id);
-
-      if (slideUpdateErr) throw slideUpdateErr;
-
-      // 2. If quiz type, upsert question metadata
-      if (currentType === "quiz") {
-        const { error: metaErr } = await supabase
-          .from("question_metadata")
-          .upsert({
-            slide_id: selectedSlide.id,
-            correct_answer: correctAnswer,
-            points: Math.max(1, points),
-            timer_seconds: timerSeconds,
-            scoring_mode: "fixed_points",
-          });
-
-        if (metaErr) throw metaErr;
-      } else {
-        // If not quiz, remove from question_metadata if exists
-        await supabase
-          .from("question_metadata")
-          .delete()
-          .eq("slide_id", selectedSlide.id);
-      }
-
-      // Update local slide list
+      // Build updated slide locally first
       const updatedSlides = [...slides];
       updatedSlides[selectedSlideIndex] = {
         ...selectedSlide,
@@ -223,8 +193,37 @@ function SlideManagerPage() {
               }
             : null,
       };
+
+      // 1. Always save to localStorage (reliable)
       saveLocalSlides(quizId, updatedSlides);
       setSlides(updatedSlides);
+
+      // 2. Best-effort Supabase sync (non-blocking)
+      try {
+        await supabase
+          .from("slides")
+          .update({ slide_type: currentType })
+          .eq("id", selectedSlide.id);
+
+        if (currentType === "quiz") {
+          await supabase
+            .from("question_metadata")
+            .upsert({
+              slide_id: selectedSlide.id,
+              correct_answer: correctAnswer,
+              points: Math.max(1, points),
+              timer_seconds: timerSeconds,
+              scoring_mode: "fixed_points",
+            });
+        } else {
+          await supabase
+            .from("question_metadata")
+            .delete()
+            .eq("slide_id", selectedSlide.id);
+        }
+      } catch {
+        // Supabase sync failed — data is safely in localStorage
+      }
 
       toast.success(`Slide ${selectedSlide.slide_number} configuration saved.`);
     } catch (err) {
