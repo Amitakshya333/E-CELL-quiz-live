@@ -477,7 +477,7 @@ function LiveRoomPage() {
   return (
     <div className="min-h-screen bg-background text-foreground flex flex-col">
       {/* Top Navigation Header */}
-      <header className="border-b border-border bg-card/90 backdrop-blur-md sticky top-0 z-30 w-full max-w-full overflow-x-hidden">
+      <header className="border-b border-border bg-card/90 backdrop-blur-md sticky top-0 z-30 w-full">
         <div className="mx-auto flex max-w-[1700px] items-center justify-between px-3.5 py-2.5 sm:px-6 sm:py-3 lg:px-8">
           <div className="flex items-center gap-3 sm:gap-6 min-w-0">
             <QuizStageMark />

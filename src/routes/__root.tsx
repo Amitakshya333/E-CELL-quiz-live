@@ -50,15 +50,26 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
 
 function RootShell({ children }: { children: ReactNode }) {
   return (
-    <html lang="en" className="dark scroll-smooth w-full max-w-full overflow-x-hidden">
+    <html lang="en" className="dark scroll-smooth">
       <head>
         <HeadContent />
       </head>
-      <body className="w-full max-w-full overflow-x-hidden min-h-screen bg-background text-foreground antialiased">
+      <body className="min-h-screen bg-background text-foreground antialiased">
         {children}
         <Scripts />
       </body>
     </html>
   );
 }
-function RootComponent() { const { queryClient } = Route.useRouteContext(); return <QueryClientProvider client={queryClient}><Toaster position="top-right" /><Outlet /></QueryClientProvider>; }
+
+function RootComponent() {
+  const { queryClient } = Route.useRouteContext();
+  return (
+    <QueryClientProvider client={queryClient}>
+      <div className="min-h-screen w-full overflow-x-clip flex flex-col">
+        <Toaster position="top-right" />
+        <Outlet />
+      </div>
+    </QueryClientProvider>
+  );
+}

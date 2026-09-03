@@ -43,7 +43,7 @@ export function AppHeader({ onSignOut }: { onSignOut?: () => void }) {
   const [open, setOpen] = useState(false);
 
   return (
-    <header className="border-b border-border bg-background/90 backdrop-blur-md sticky top-0 z-40 w-full max-w-full overflow-x-hidden">
+    <header className="border-b border-border bg-background/90 backdrop-blur-md sticky top-0 z-40 w-full">
       <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3 sm:px-6 lg:px-8">
         <QuizStageMark />
 
