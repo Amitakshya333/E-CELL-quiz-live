@@ -62,6 +62,12 @@ function SlideManagerPage() {
   const [correctAnswer, setCorrectAnswer] = useState<CorrectAnswer>("B");
   const [points, setPoints] = useState<number>(100);
   const [timerSeconds, setTimerSeconds] = useState<number | null>(30);
+  const [questionText, setQuestionText] = useState("");
+  const [optionA, setOptionA] = useState("");
+  const [optionB, setOptionB] = useState("");
+  const [optionC, setOptionC] = useState("");
+  const [optionD, setOptionD] = useState("");
+  const [slideTitle, setSlideTitle] = useState("");
   const [mobileTab, setMobileTab] = useState<"editor" | "track">("editor");
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
 
@@ -86,6 +92,15 @@ function SlideManagerPage() {
 
           if (quiz?.title) title = quiz.title;
 
+        // 1. Check local storage first (preserves user-edited titles, questions, and options)
+        const localSlides = getLocalSlides(quizId);
+        const localQuiz = getLocalQuizById(quizId);
+        if (localQuiz?.title) title = localQuiz.title;
+
+        if (localSlides && localSlides.length > 0) {
+          mapped = localSlides;
+        } else {
+          // 2. Fall back to Supabase if no local slides exist
           const { data: slideRows } = await supabase
             .from("slides")
             .select("id,slide_number,page_number,slide_type,question_metadata(correct_answer,points,timer_seconds)")
@@ -100,30 +115,24 @@ function SlideManagerPage() {
               slide_type: s.slide_type,
               question_metadata: s.question_metadata?.[0] || s.question_metadata || null,
             }));
-          }
-        } catch {
-          // Cloud error fallback
-        }
-
-        if (mapped.length === 0) {
-          const localQuiz = getLocalQuizById(quizId);
-          if (localQuiz) {
-            title = localQuiz.title;
-            const localSlides = getLocalSlides(quizId);
-            if (localSlides) mapped = localSlides;
+            // Cache locally
+            saveLocalSlides(quizId, mapped);
           }
         }
+      } catch {
+        // Cloud error fallback
+      }
 
         if (mapped.length === 0 && quizId === DEMO_QUIZ_ID) {
           title = "CAN YOU CRACK THE STARTUP?";
           mapped = [
-            { id: "30000000-0000-4000-8000-000000000001", slide_number: 1, page_number: 1, slide_type: "normal" },
-            { id: "30000000-0000-4000-8000-000000000002", slide_number: 2, page_number: 2, slide_type: "normal" },
+            { id: "30000000-0000-4000-8000-000000000001", slide_number: 1, page_number: 1, slide_type: "normal", slide_title: "CAN YOU CRACK THE STARTUP?" } as any,
+            { id: "30000000-0000-4000-8000-000000000002", slide_number: 2, page_number: 2, slide_type: "normal", slide_title: "HOUSE RULES", question_text: "Scan QR → Answer fast → Top scorers win!" } as any,
             { id: "30000000-0000-4000-8000-000000000003", slide_number: 3, page_number: 3, slide_type: "join" },
-            { id: "30000000-0000-4000-8000-000000000004", slide_number: 4, page_number: 4, slide_type: "quiz", question_metadata: { correct_answer: "C", points: 200, timer_seconds: 30 } },
-            { id: "30000000-0000-4000-8000-000000000005", slide_number: 5, page_number: 5, slide_type: "quiz", question_metadata: { correct_answer: "B", points: 300, timer_seconds: 20 } },
+            { id: "30000000-0000-4000-8000-000000000004", slide_number: 4, page_number: 4, slide_type: "quiz", question_text: "What is the #1 most cited reason seed-stage startups fail within 18 months?", options: { A: "Co-founder disputes", B: "Running out of cash", C: "Building something nobody wants", D: "Bad marketing" }, question_metadata: { correct_answer: "C", points: 200, timer_seconds: 30 } } as any,
+            { id: "30000000-0000-4000-8000-000000000005", slide_number: 5, page_number: 5, slide_type: "quiz", question_text: "If Net Burn is ₹1L/month and bank balance is ₹8L, what is the runway?", options: { A: "6 Months", B: "12 Months", C: "15 Months", D: "8 Months" }, question_metadata: { correct_answer: "D", points: 300, timer_seconds: 20 } } as any,
             { id: "30000000-0000-4000-8000-000000000006", slide_number: 6, page_number: 6, slide_type: "leaderboard" },
-            { id: "30000000-0000-4000-8000-000000000007", slide_number: 7, page_number: 7, slide_type: "quiz", question_metadata: { correct_answer: "D", points: 500, timer_seconds: 45 } },
+            { id: "30000000-0000-4000-8000-000000000007", slide_number: 7, page_number: 7, slide_type: "quiz", question_text: "Which multi-billion dollar platform originally launched under the name 'Burbn' before pivoting?", options: { A: "Instagram", B: "Twitter / X", C: "Airbnb", D: "Slack" }, question_metadata: { correct_answer: "A", points: 500, timer_seconds: 45 } } as any,
             { id: "30000000-0000-4000-8000-000000000008", slide_number: 8, page_number: 8, slide_type: "results" },
           ];
         }
@@ -140,8 +149,15 @@ function SlideManagerPage() {
         if (mapped.length > 0 && mapped[0]) {
           const first = mapped[0];
           setCurrentType(first.slide_type);
+          setSlideTitle((first as any).slide_title || "");
+          setQuestionText((first as any).question_text || "");
+          const opts = (first as any).options;
+          setOptionA(opts?.A || "");
+          setOptionB(opts?.B || "");
+          setOptionC(opts?.C || "");
+          setOptionD(opts?.D || "");
           if (first.question_metadata) {
-            setCorrectAnswer(first.question_metadata.correct_answer as CorrectAnswer);
+            setCorrectAnswer(first.question_metadata.correct_answer as any);
             setPoints(first.question_metadata.points || 100);
             setTimerSeconds(first.question_metadata.timer_seconds ?? 30);
           }
@@ -163,8 +179,15 @@ function SlideManagerPage() {
     const slide = slides[index];
     if (slide) {
       setCurrentType(slide.slide_type);
+      setSlideTitle((slide as any).slide_title || "");
+      setQuestionText((slide as any).question_text || "");
+      const opts = (slide as any).options;
+      setOptionA(opts?.A || "");
+      setOptionB(opts?.B || "");
+      setOptionC(opts?.C || "");
+      setOptionD(opts?.D || "");
       if (slide.question_metadata) {
-        setCorrectAnswer(slide.question_metadata.correct_answer as CorrectAnswer);
+        setCorrectAnswer(slide.question_metadata.correct_answer as any);
         setPoints(slide.question_metadata.points || 100);
         setTimerSeconds(slide.question_metadata.timer_seconds ?? 30);
       } else {
@@ -184,6 +207,9 @@ function SlideManagerPage() {
       updatedSlides[selectedSlideIndex] = {
         ...selectedSlide,
         slide_type: currentType,
+        slide_title: slideTitle || null,
+        question_text: currentType === "quiz" ? (questionText || null) : null,
+        options: currentType === "quiz" ? { A: optionA || "Option A", B: optionB || "Option B", C: optionC || "Option C", D: optionD || "Option D" } : null,
         question_metadata:
           currentType === "quiz"
             ? {
@@ -507,6 +533,9 @@ function SlideManagerPage() {
                 slide={{
                   ...selectedSlide,
                   slide_type: currentType,
+                  slide_title: slideTitle || null,
+                  question_text: currentType === "quiz" ? (questionText || null) : null,
+                  options: currentType === "quiz" ? { A: optionA || "Option A", B: optionB || "Option B", C: optionC || "Option C", D: optionD || "Option D" } : null,
                   question_metadata:
                     currentType === "quiz"
                       ? {
@@ -573,6 +602,19 @@ function SlideManagerPage() {
             </div>
           </div>
 
+          {/* Slide Title */}
+          <div>
+            <label className="block text-xs font-bold uppercase tracking-wider text-muted-foreground mb-1.5">
+              Slide Title
+            </label>
+            <Input
+              value={slideTitle}
+              onChange={(e) => setSlideTitle(e.target.value)}
+              placeholder={currentType === "quiz" ? "e.g. Round 1" : "e.g. Welcome to E-Cell Quiz"}
+              className="h-10"
+            />
+          </div>
+
           {/* Quiz Configuration Panel (Only visible when QUIZ) */}
           {currentType === "quiz" ? (
             <div className="space-y-5 rounded-xl border border-border bg-card p-4">
@@ -581,6 +623,44 @@ function SlideManagerPage() {
                   Quiz Mechanics
                 </span>
                 <Badge className="bg-brand text-brand-foreground text-[10px]">A / B / C / D</Badge>
+              </div>
+
+              {/* Question Text */}
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-muted-foreground mb-1.5">
+                  Question Text
+                </label>
+                <Input
+                  value={questionText}
+                  onChange={(e) => setQuestionText(e.target.value)}
+                  placeholder="e.g. What is the #1 reason startups fail?"
+                  className="h-10"
+                />
+              </div>
+
+              {/* Answer Options */}
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-muted-foreground mb-1.5">
+                  Answer Options
+                </label>
+                <div className="grid grid-cols-1 gap-2">
+                  {(["A", "B", "C", "D"] as const).map((key) => (
+                    <div key={key} className="flex items-center gap-2">
+                      <span className={`font-mono font-bold text-sm w-6 text-center ${correctAnswer === key ? "text-emerald-500" : "text-muted-foreground"}`}>{key}</span>
+                      <Input
+                        value={key === "A" ? optionA : key === "B" ? optionB : key === "C" ? optionC : optionD}
+                        onChange={(e) => {
+                          if (key === "A") setOptionA(e.target.value);
+                          else if (key === "B") setOptionB(e.target.value);
+                          else if (key === "C") setOptionC(e.target.value);
+                          else setOptionD(e.target.value);
+                        }}
+                        placeholder={`Option ${key}`}
+                        className="h-9 flex-1"
+                      />
+                    </div>
+                  ))}
+                </div>
               </div>
 
               {/* Correct Answer */}

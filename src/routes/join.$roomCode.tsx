@@ -47,7 +47,16 @@ type Slide = {
   id: string;
   slide_number: number;
   slide_type: "normal" | "quiz" | "join" | "leaderboard" | "results";
+  slide_title?: string | null;
+  question_text?: string | null;
+  options?: {
+    A: string;
+    B: string;
+    C: string;
+    D: string;
+  } | null;
   question_metadata?: {
+    correct_answer?: "A" | "B" | "C" | "D";
     points: number;
     timer_seconds: number | null;
   } | null;
@@ -62,6 +71,7 @@ type Participant = {
 
 export function ParticipantLivePage() {
   const { roomCode } = Route.useParams();
+  const normalizedCode = roomCode.toUpperCase();
   const navigate = useNavigate();
 
   const [room, setRoom] = useState<Room | null>(null);
@@ -124,29 +134,28 @@ export function ParticipantLivePage() {
         // Load slides
         let slideList: Slide[] = [];
         try {
-          const [{ data: quiz }, { data: slideRows }] = await Promise.all([
-            supabase.from("quizzes").select("title").eq("id", targetRoom.quiz_id).maybeSingle(),
-            supabase
-              .from("slides")
-              .select("id,slide_number,slide_type,question_metadata(points,timer_seconds)")
-              .eq("quiz_id", targetRoom.quiz_id)
-              .order("slide_number"),
-          ]);
-
-          if (quiz?.title) setQuizTitle(quiz.title);
-          if (slideRows && slideRows.length > 0) slideList = slideRows as Slide[];
-        } catch {
-          // Ignore
-        }
-
-        if (slideList.length === 0) {
-          // Try loading from localStorage (user-created quizzes)
+          // 1. Prioritize local slides (contains question text & option labels)
           const localQuiz = getLocalQuizById(targetRoom.quiz_id);
-          if (localQuiz) setQuizTitle(localQuiz.title);
+          if (localQuiz?.title) setQuizTitle(localQuiz.title);
+
           const localSlides = getLocalSlides(targetRoom.quiz_id);
           if (localSlides && localSlides.length > 0) {
             slideList = localSlides as Slide[];
+          } else {
+            const [{ data: quiz }, { data: slideRows }] = await Promise.all([
+              supabase.from("quizzes").select("title").eq("id", targetRoom.quiz_id).maybeSingle(),
+              supabase
+                .from("slides")
+                .select("id,slide_number,slide_type,question_metadata(points,timer_seconds)")
+                .eq("quiz_id", targetRoom.quiz_id)
+                .order("slide_number"),
+            ]);
+
+            if (quiz?.title) setQuizTitle(quiz.title);
+            if (slideRows && slideRows.length > 0) slideList = slideRows as Slide[];
           }
+        } catch {
+          // Ignore
         }
 
         if (slideList.length === 0) {
@@ -164,8 +173,18 @@ export function ParticipantLivePage() {
         }
         setSlides(slideList);
 
-        // Check stored participant session
-        const storedParticipantId = sessionStorage.getItem(`quizstage-participant-${normalizedCode}`);
+        // Check stored participant session (persisted locally)
+        try {
+          const storedParticipantJson = localStorage.getItem(`quizstage-participant-data-${normalizedCode}`);
+          if (storedParticipantJson) {
+            const parsed = JSON.parse(storedParticipantJson);
+            if (parsed && parsed.id && parsed.display_name) {
+              setParticipant(parsed as Participant);
+            }
+          }
+        } catch {}
+
+        const storedParticipantId = localStorage.getItem(`quizstage-participant-${normalizedCode}`);
         if (storedParticipantId) {
           try {
             const { data: partData } = await supabase
@@ -176,6 +195,7 @@ export function ParticipantLivePage() {
 
             if (partData) {
               setParticipant(partData as Participant);
+              localStorage.setItem(`quizstage-participant-data-${normalizedCode}`, JSON.stringify(partData));
             }
           } catch {
             // Ignore
@@ -223,6 +243,9 @@ export function ParticipantLivePage() {
           setRoom(event.data.room);
         } else if (event.data?.type === "PARTICIPANT_UPDATE" && event.data.participant?.id === participant?.id) {
           setParticipant(event.data.participant);
+          try {
+            localStorage.setItem(`quizstage-participant-data-${normalizedCode}`, JSON.stringify(event.data.participant));
+          } catch {}
         }
       };
     } catch {
@@ -258,6 +281,7 @@ export function ParticipantLivePage() {
   useEffect(() => {
     if (room?.question_state === "answer_revealed" && participant && currentSlide) {
       void (async () => {
+        let scored = false;
         try {
           const [{ data: ans }, { data: allParts }] = await Promise.all([
             supabase
@@ -275,6 +299,7 @@ export function ParticipantLivePage() {
           ]);
 
           if (ans) {
+            scored = true;
             setMyAnswerResult({
               is_correct: ans.is_correct,
               points_awarded: ans.points_awarded ?? 0,
@@ -284,16 +309,52 @@ export function ParticipantLivePage() {
             }
           }
 
-          if (allParts) {
+          if (allParts && allParts.length > 0) {
             const idx = allParts.findIndex((p) => p.id === participant.id);
             if (idx >= 0) setMyRank(idx + 1);
           }
         } catch {
           // Ignore
         }
+
+        // Local-first calculation fallback
+        if (!scored && submittedOption && currentSlide.question_metadata?.correct_answer) {
+          const isCorrect = submittedOption === currentSlide.question_metadata.correct_answer;
+          const pts = isCorrect ? (currentSlide.question_metadata.points ?? 100) : 0;
+          setMyAnswerResult({
+            is_correct: isCorrect,
+            points_awarded: pts,
+          });
+          if (isCorrect && typeof navigator !== "undefined" && "vibrate" in navigator) {
+            try { navigator.vibrate([80, 50, 80]); } catch {}
+          }
+        }
+
+        try {
+          const localParts: Participant[] = JSON.parse(localStorage.getItem(`quizstage-participants-${normalizedCode}`) || "[]");
+          if (localParts.length > 0) {
+            localParts.sort((a, b) => (b.score || 0) - (a.score || 0));
+            const idx = localParts.findIndex((p) => p.id === participant.id);
+            if (idx >= 0) setMyRank(idx + 1);
+          }
+        } catch {}
       })();
     }
-  }, [room?.question_state, room?.id, participant, currentSlide]);
+  }, [room?.question_state, room?.id, participant, currentSlide, submittedOption, normalizedCode]);
+
+  // Update rank when leaderboard is shown or quiz finishes
+  useEffect(() => {
+    if ((room?.question_state === "leaderboard" || room?.status === "finished") && participant) {
+      try {
+        const localParts: Participant[] = JSON.parse(localStorage.getItem(`quizstage-participants-${normalizedCode}`) || "[]");
+        if (localParts.length > 0) {
+          localParts.sort((a, b) => (b.score || 0) - (a.score || 0));
+          const idx = localParts.findIndex((p) => p.id === participant.id);
+          if (idx >= 0) setMyRank(idx + 1);
+        }
+      } catch {}
+    }
+  }, [room?.question_state, room?.status, participant, normalizedCode]);
 
   // Handle Joining
   async function handleJoin(e: FormEvent) {
@@ -337,7 +398,19 @@ export function ParticipantLivePage() {
         };
       }
 
-      sessionStorage.setItem(`quizstage-participant-${room.room_code}`, newPart.id);
+      const codeUpper = room.room_code.toUpperCase();
+      localStorage.setItem(`quizstage-participant-${codeUpper}`, newPart.id);
+      localStorage.setItem(`quizstage-participant-data-${codeUpper}`, JSON.stringify(newPart));
+
+      // Store in local participants list for host/projector to read
+      try {
+        const key = `quizstage-participants-${codeUpper}`;
+        const existing = JSON.parse(localStorage.getItem(key) || "[]");
+        if (!existing.some((p: any) => p.id === newPart.id)) {
+          existing.push(newPart);
+          localStorage.setItem(key, JSON.stringify(existing));
+        }
+      } catch {}
       setParticipant(newPart);
 
       // Broadcast join event
@@ -551,8 +624,8 @@ export function ParticipantLivePage() {
         {/* State D: Question OPEN -> Show Large Tactile A/B/C/D Buttons */}
         {room.status === "presenting" && isQuestion && isOpen && (
           <div className="w-full h-full flex flex-col justify-between py-2">
-            {/* Countdown timer */}
-            <div className="flex items-center justify-between px-2 mb-2">
+            {/* Countdown timer & Question preview */}
+            <div className="flex items-center justify-between px-2 mb-1">
               <span className="font-mono text-xs font-bold uppercase text-paper/60">
                 Question {currentSlide?.slide_number}
               </span>
@@ -563,6 +636,12 @@ export function ParticipantLivePage() {
                 </div>
               )}
             </div>
+
+            {(currentSlide as any)?.question_text && (
+              <p className="text-xs sm:text-sm font-bold text-paper text-center px-2 mb-2 line-clamp-2">
+                {(currentSlide as any).question_text}
+              </p>
+            )}
 
             {submittedOption ? (
               /* Locked in state */
@@ -597,8 +676,13 @@ export function ParticipantLivePage() {
                       <Loader2 className="h-10 w-10 animate-spin" />
                     ) : (
                       <>
-                        <span className="text-2xl sm:text-3xl opacity-80 mb-1">{btn.shape}</span>
-                        <span className="font-display text-5xl sm:text-6xl font-black">{btn.key}</span>
+                        <span className="text-lg sm:text-2xl opacity-80 mb-0.5">{btn.shape}</span>
+                        <span className="font-display text-4xl sm:text-5xl font-black leading-none">{btn.key}</span>
+                        {(currentSlide as any)?.options?.[btn.key] && (
+                          <span className="text-[11px] sm:text-xs font-semibold text-white/90 truncate max-w-[130px] sm:max-w-[150px] px-1 mt-1 text-center">
+                            {(currentSlide as any).options[btn.key]}
+                          </span>
+                        )}
                       </>
                     )}
                   </button>

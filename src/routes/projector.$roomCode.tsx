@@ -17,7 +17,7 @@ import { Badge } from "@/components/ui/badge";
 import { QrCodeDisplay } from "@/components/qr-code";
 import { SlideRenderer, type SlideData } from "@/components/slides/slide-renderer";
 import { supabase } from "@/integrations/supabase/client";
-import { getLocalRoomByCode } from "@/lib/quizstage";
+import { getLocalRoomByCode, getLocalSlides, getLocalQuizById } from "@/lib/quizstage";
 
 export const Route = createFileRoute("/projector/$roomCode")({
   head: () => ({
@@ -133,15 +133,23 @@ function ProjectorPage() {
             supabase.from("answers").select("id,participant_id,selected_answer,is_correct").eq("room_id", targetRoom.id),
           ]);
 
-          if (quiz?.title) setQuizTitle(quiz.title);
+          // Check local storage first (contains user-customized question text, options, and slide titles)
+          const localQuiz = getLocalQuizById(targetRoom.quiz_id);
+          if (localQuiz?.title) setQuizTitle(localQuiz.title);
+          else if (quiz?.title) setQuizTitle(quiz.title);
 
-          mappedSlides = (slideRows ?? []).map((s: any) => ({
-            id: s.id,
-            slide_number: s.slide_number,
-            page_number: s.page_number,
-            slide_type: s.slide_type,
-            question_metadata: s.question_metadata?.[0] || s.question_metadata || null,
-          }));
+          const localSlides = getLocalSlides(targetRoom.quiz_id);
+          if (localSlides && localSlides.length > 0) {
+            mappedSlides = localSlides as SlideData[];
+          } else if (slideRows && slideRows.length > 0) {
+            mappedSlides = (slideRows ?? []).map((s: any) => ({
+              id: s.id,
+              slide_number: s.slide_number,
+              page_number: s.page_number,
+              slide_type: s.slide_type,
+              question_metadata: s.question_metadata?.[0] || s.question_metadata || null,
+            }));
+          }
 
           if (participantRows) setParticipants(participantRows as Participant[]);
           if (answerRows) setAnswers(answerRows as Answer[]);
@@ -149,15 +157,28 @@ function ProjectorPage() {
           // fallback
         }
 
+        // Load local participants
+        try {
+          const localParts = JSON.parse(localStorage.getItem(`quizstage-participants-${normalized}`) || "[]");
+          if (localParts.length > 0) {
+            setParticipants((prev) => {
+              const map = new Map<string, Participant>();
+              prev.forEach((p) => map.set(p.id, p));
+              localParts.forEach((p: Participant) => map.set(p.id, p));
+              return Array.from(map.values()).sort((a, b) => (b.score || 0) - (a.score || 0));
+            });
+          }
+        } catch {}
+
         if (mappedSlides.length === 0) {
           mappedSlides = [
-            { id: "30000000-0000-4000-8000-000000000001", slide_number: 1, page_number: 1, slide_type: "normal" },
-            { id: "30000000-0000-4000-8000-000000000002", slide_number: 2, page_number: 2, slide_type: "normal" },
+            { id: "30000000-0000-4000-8000-000000000001", slide_number: 1, page_number: 1, slide_type: "normal", slide_title: "CAN YOU CRACK THE STARTUP?" } as SlideData,
+            { id: "30000000-0000-4000-8000-000000000002", slide_number: 2, page_number: 2, slide_type: "normal", slide_title: "HOUSE RULES", question_text: "Scan QR → Answer fast → Top scorers win!" } as SlideData,
             { id: "30000000-0000-4000-8000-000000000003", slide_number: 3, page_number: 3, slide_type: "join" },
-            { id: "30000000-0000-4000-8000-000000000004", slide_number: 4, page_number: 4, slide_type: "quiz", question_metadata: { correct_answer: "C", points: 200, timer_seconds: 30 } },
-            { id: "30000000-0000-4000-8000-000000000005", slide_number: 5, page_number: 5, slide_type: "quiz", question_metadata: { correct_answer: "B", points: 300, timer_seconds: 20 } },
+            { id: "30000000-0000-4000-8000-000000000004", slide_number: 4, page_number: 4, slide_type: "quiz", question_text: "What is the #1 reason startups fail?", options: { A: "Co-founder disputes", B: "Running out of cash", C: "Building something nobody wants", D: "Bad marketing" }, question_metadata: { correct_answer: "C", points: 200, timer_seconds: 30 } } as SlideData,
+            { id: "30000000-0000-4000-8000-000000000005", slide_number: 5, page_number: 5, slide_type: "quiz", question_text: "If Net Burn is ₹1L/month and bank balance is ₹8L, what is the runway?", options: { A: "6 Months", B: "12 Months", C: "15 Months", D: "8 Months" }, question_metadata: { correct_answer: "D", points: 300, timer_seconds: 20 } } as SlideData,
             { id: "30000000-0000-4000-8000-000000000006", slide_number: 6, page_number: 6, slide_type: "leaderboard" },
-            { id: "30000000-0000-4000-8000-000000000007", slide_number: 7, page_number: 7, slide_type: "quiz", question_metadata: { correct_answer: "D", points: 500, timer_seconds: 45 } },
+            { id: "30000000-0000-4000-8000-000000000007", slide_number: 7, page_number: 7, slide_type: "quiz", question_text: "Which platform was originally called 'Burbn'?", options: { A: "Instagram", B: "Twitter / X", C: "Airbnb", D: "Slack" }, question_metadata: { correct_answer: "A", points: 500, timer_seconds: 45 } } as SlideData,
             { id: "30000000-0000-4000-8000-000000000008", slide_number: 8, page_number: 8, slide_type: "results" },
           ];
         }
@@ -220,6 +241,11 @@ function ProjectorPage() {
           setParticipants((prev) => {
             if (prev.some((p) => p.id === event.data.participant.id)) return prev;
             return [...prev, event.data.participant];
+          });
+        } else if (event.data?.type === "PARTICIPANT_UPDATE") {
+          setParticipants((prev) => {
+            const updated = prev.map((p) => p.id === event.data.participant.id ? event.data.participant : p);
+            return updated.sort((a: any, b: any) => (b.score || 0) - (a.score || 0));
           });
         } else if (event.data?.type === "ANSWER_SUBMITTED") {
           setAnswers((prev) => {
