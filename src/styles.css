@@ -63,14 +63,62 @@
 }
 
 @layer base {
-  * { border-color: var(--color-border); }
-  html { background: var(--color-background); }
-  body { margin: 0; background: var(--color-background); color: var(--color-foreground); font-family: "Space Grotesk", sans-serif; }
-  button, input, textarea, select { font: inherit; }
-  ::selection { background: var(--color-brand); color: var(--color-brand-foreground); }
+  * {
+    border-color: var(--color-border);
+    -webkit-tap-highlight-color: transparent;
+  }
+  html {
+    background: var(--color-background);
+    touch-action: manipulation;
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+  }
+  body {
+    margin: 0;
+    background: var(--color-background);
+    color: var(--color-foreground);
+    font-family: "Space Grotesk", sans-serif;
+    -webkit-font-smoothing: antialiased;
+    overscroll-behavior-y: none;
+  }
+  button, input, textarea, select {
+    font: inherit;
+  }
+  /* Prevent iOS Safari from auto-zooming on input focus */
+  input, select, textarea {
+    font-size: 16px;
+  }
+  ::selection {
+    background: var(--color-brand);
+    color: var(--color-brand-foreground);
+  }
 }
 
 @layer utilities {
-  .stage-poster { background-image: linear-gradient(135deg, color-mix(in oklch, var(--color-brand) 88%, transparent) 0 1px, transparent 1px 100%); background-size: 14px 14px; }
-  .editorial-rule { background: var(--color-foreground); height: 1px; }
+  .stage-poster {
+    background-image: linear-gradient(135deg, color-mix(in oklch, var(--color-brand) 88%, transparent) 0 1px, transparent 1px 100%);
+    background-size: 14px 14px;
+  }
+  .editorial-rule {
+    background: var(--color-foreground);
+    height: 1px;
+  }
+  /* Phone-native touch feedback */
+  .touch-press {
+    touch-action: manipulation;
+    user-select: none;
+    -webkit-user-select: none;
+    transition: transform 0.08s ease-out, opacity 0.08s ease-out;
+  }
+  .touch-press:active {
+    transform: scale(0.96);
+    opacity: 0.92;
+  }
+  /* Safe Area insets */
+  .pt-safe {
+    padding-top: max(env(safe-area-inset-top, 0px), 12px);
+  }
+  .pb-safe {
+    padding-bottom: max(env(safe-area-inset-bottom, 0px), 16px);
+  }
 }

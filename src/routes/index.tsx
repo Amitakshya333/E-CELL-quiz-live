@@ -40,18 +40,18 @@ function HomePage() {
             <span className="h-px w-10 bg-brand" />
             Presentation-powered live quiz
           </div>
-          <h1 className="max-w-4xl font-display text-6xl font-black uppercase leading-[0.88] tracking-tight text-foreground sm:text-7xl lg:text-[7.4rem]">
+          <h1 className="max-w-4xl font-display text-4xl sm:text-6xl md:text-7xl lg:text-[7.4rem] font-black uppercase leading-[0.9] tracking-tight text-foreground">
             Put the room<br /><span className="text-brand">on the spot.</span>
           </h1>
-          <p className="mt-8 max-w-xl text-lg leading-8 text-muted-foreground">
-            QuizStage turns your deck into a shared moment: one screen for the room, one phone for every answer, and one host in control.
+          <p className="mt-6 max-w-xl text-base sm:text-lg leading-relaxed text-muted-foreground font-medium">
+            QuizStage turns your presentation deck into a shared live moment: one screen for the room, one phone for every answer, and one host in control.
           </p>
-          <div className="mt-10 flex flex-wrap gap-3">
+          <div className="mt-8 flex flex-col sm:flex-row gap-3 w-full sm:w-auto">
             <Link to="/auth">
-              <Button size="lg"><CirclePlay /> Build your first quiz <ArrowRight /></Button>
+              <Button size="lg" className="w-full sm:w-auto h-12 font-bold touch-press"><CirclePlay className="mr-2 h-4 w-4" /> Build your first quiz <ArrowRight className="ml-2 h-4 w-4" /></Button>
             </Link>
             <Link to="/join">
-              <Button variant="secondary" size="lg"><Smartphone /> Join with a code</Button>
+              <Button variant="secondary" size="lg" className="w-full sm:w-auto h-12 font-bold touch-press"><Smartphone className="mr-2 h-4 w-4" /> Join with a code</Button>
             </Link>
           </div>
           <div className="mt-14 grid max-w-xl grid-cols-3 gap-5 border-t border-border pt-6">

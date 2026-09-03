@@ -10,33 +10,153 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as AuthRouteImport } from './routes/auth'
+import { Route as DashboardRouteImport } from './routes/dashboard'
+import { Route as JoinRouteImport } from './routes/join'
+import { Route as JoinRoomCodeRouteImport } from './routes/join.$roomCode'
+import { Route as LiveRoomCodeRouteImport } from './routes/live.$roomCode'
+import { Route as ProjectorRoomCodeRouteImport } from './routes/projector.$roomCode'
+import { Route as QuizzesNewRouteImport } from './routes/quizzes.new'
+import { Route as QuizzesQuizIdSlidesRouteImport } from './routes/quizzes.$quizId.slides'
+import { Route as RoomsRoomIdResultsRouteImport } from './routes/rooms.$roomId.results'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AuthRoute = AuthRouteImport.update({
+  id: '/auth',
+  path: '/auth',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DashboardRoute = DashboardRouteImport.update({
+  id: '/dashboard',
+  path: '/dashboard',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const JoinRoute = JoinRouteImport.update({
+  id: '/join',
+  path: '/join',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const JoinRoomCodeRoute = JoinRoomCodeRouteImport.update({
+  id: '/$roomCode',
+  path: '/$roomCode',
+  getParentRoute: () => JoinRoute,
+} as any)
+const LiveRoomCodeRoute = LiveRoomCodeRouteImport.update({
+  id: '/live/$roomCode',
+  path: '/live/$roomCode',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ProjectorRoomCodeRoute = ProjectorRoomCodeRouteImport.update({
+  id: '/projector/$roomCode',
+  path: '/projector/$roomCode',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const QuizzesNewRoute = QuizzesNewRouteImport.update({
+  id: '/quizzes/new',
+  path: '/quizzes/new',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const QuizzesQuizIdSlidesRoute = QuizzesQuizIdSlidesRouteImport.update({
+  id: '/quizzes/$quizId/slides',
+  path: '/quizzes/$quizId/slides',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const RoomsRoomIdResultsRoute = RoomsRoomIdResultsRouteImport.update({
+  id: '/rooms/$roomId/results',
+  path: '/rooms/$roomId/results',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/auth': typeof AuthRoute
+  '/dashboard': typeof DashboardRoute
+  '/join': typeof JoinRouteWithChildren
+  '/join/$roomCode': typeof JoinRoomCodeRoute
+  '/live/$roomCode': typeof LiveRoomCodeRoute
+  '/projector/$roomCode': typeof ProjectorRoomCodeRoute
+  '/quizzes/new': typeof QuizzesNewRoute
+  '/quizzes/$quizId/slides': typeof QuizzesQuizIdSlidesRoute
+  '/rooms/$roomId/results': typeof RoomsRoomIdResultsRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/auth': typeof AuthRoute
+  '/dashboard': typeof DashboardRoute
+  '/join': typeof JoinRouteWithChildren
+  '/join/$roomCode': typeof JoinRoomCodeRoute
+  '/live/$roomCode': typeof LiveRoomCodeRoute
+  '/projector/$roomCode': typeof ProjectorRoomCodeRoute
+  '/quizzes/new': typeof QuizzesNewRoute
+  '/quizzes/$quizId/slides': typeof QuizzesQuizIdSlidesRoute
+  '/rooms/$roomId/results': typeof RoomsRoomIdResultsRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/auth': typeof AuthRoute
+  '/dashboard': typeof DashboardRoute
+  '/join': typeof JoinRouteWithChildren
+  '/join/$roomCode': typeof JoinRoomCodeRoute
+  '/live/$roomCode': typeof LiveRoomCodeRoute
+  '/projector/$roomCode': typeof ProjectorRoomCodeRoute
+  '/quizzes/new': typeof QuizzesNewRoute
+  '/quizzes/$quizId/slides': typeof QuizzesQuizIdSlidesRoute
+  '/rooms/$roomId/results': typeof RoomsRoomIdResultsRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/'
+  fullPaths:
+    | '/'
+    | '/auth'
+    | '/dashboard'
+    | '/join'
+    | '/join/$roomCode'
+    | '/live/$roomCode'
+    | '/projector/$roomCode'
+    | '/quizzes/new'
+    | '/quizzes/$quizId/slides'
+    | '/rooms/$roomId/results'
   fileRoutesByTo: FileRoutesByTo
-  to: '/'
-  id: '__root__' | '/'
+  to:
+    | '/'
+    | '/auth'
+    | '/dashboard'
+    | '/join'
+    | '/join/$roomCode'
+    | '/live/$roomCode'
+    | '/projector/$roomCode'
+    | '/quizzes/new'
+    | '/quizzes/$quizId/slides'
+    | '/rooms/$roomId/results'
+  id:
+    | '__root__'
+    | '/'
+    | '/auth'
+    | '/dashboard'
+    | '/join'
+    | '/join/$roomCode'
+    | '/live/$roomCode'
+    | '/projector/$roomCode'
+    | '/quizzes/new'
+    | '/quizzes/$quizId/slides'
+    | '/rooms/$roomId/results'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  AuthRoute: typeof AuthRoute
+  DashboardRoute: typeof DashboardRoute
+  JoinRoute: typeof JoinRouteWithChildren
+  LiveRoomCodeRoute: typeof LiveRoomCodeRoute
+  ProjectorRoomCodeRoute: typeof ProjectorRoomCodeRoute
+  QuizzesNewRoute: typeof QuizzesNewRoute
+  QuizzesQuizIdSlidesRoute: typeof QuizzesQuizIdSlidesRoute
+  RoomsRoomIdResultsRoute: typeof RoomsRoomIdResultsRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -48,11 +168,92 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/auth': {
+      id: '/auth'
+      path: '/auth'
+      fullPath: '/auth'
+      preLoaderRoute: typeof AuthRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/dashboard': {
+      id: '/dashboard'
+      path: '/dashboard'
+      fullPath: '/dashboard'
+      preLoaderRoute: typeof DashboardRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/join': {
+      id: '/join'
+      path: '/join'
+      fullPath: '/join'
+      preLoaderRoute: typeof JoinRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/join/$roomCode': {
+      id: '/join/$roomCode'
+      path: '/$roomCode'
+      fullPath: '/join/$roomCode'
+      preLoaderRoute: typeof JoinRoomCodeRouteImport
+      parentRoute: typeof JoinRoute
+    }
+    '/live/$roomCode': {
+      id: '/live/$roomCode'
+      path: '/live/$roomCode'
+      fullPath: '/live/$roomCode'
+      preLoaderRoute: typeof LiveRoomCodeRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/projector/$roomCode': {
+      id: '/projector/$roomCode'
+      path: '/projector/$roomCode'
+      fullPath: '/projector/$roomCode'
+      preLoaderRoute: typeof ProjectorRoomCodeRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/quizzes/new': {
+      id: '/quizzes/new'
+      path: '/quizzes/new'
+      fullPath: '/quizzes/new'
+      preLoaderRoute: typeof QuizzesNewRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/quizzes/$quizId/slides': {
+      id: '/quizzes/$quizId/slides'
+      path: '/quizzes/$quizId/slides'
+      fullPath: '/quizzes/$quizId/slides'
+      preLoaderRoute: typeof QuizzesQuizIdSlidesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/rooms/$roomId/results': {
+      id: '/rooms/$roomId/results'
+      path: '/rooms/$roomId/results'
+      fullPath: '/rooms/$roomId/results'
+      preLoaderRoute: typeof RoomsRoomIdResultsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
+interface JoinRouteChildren {
+  JoinRoomCodeRoute: typeof JoinRoomCodeRoute
+}
+
+const JoinRouteChildren: JoinRouteChildren = {
+  JoinRoomCodeRoute: JoinRoomCodeRoute,
+}
+
+const JoinRouteWithChildren = JoinRoute._addFileChildren(JoinRouteChildren)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AuthRoute: AuthRoute,
+  DashboardRoute: DashboardRoute,
+  JoinRoute: JoinRouteWithChildren,
+  LiveRoomCodeRoute: LiveRoomCodeRoute,
+  ProjectorRoomCodeRoute: ProjectorRoomCodeRoute,
+  QuizzesNewRoute: QuizzesNewRoute,
+  QuizzesQuizIdSlidesRoute: QuizzesQuizIdSlidesRoute,
+  RoomsRoomIdResultsRoute: RoomsRoomIdResultsRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
