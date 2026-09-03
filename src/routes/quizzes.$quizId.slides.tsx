@@ -13,12 +13,21 @@ import {
   Save,
   Trophy,
   Users,
-  BarChart2
+  BarChart2,
+  Menu,
+  SlidersHorizontal,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from "@/components/ui/sheet";
 import { AppHeader } from "@/components/quizstage-shell";
 import { SlideRenderer, type SlideData } from "@/components/slides/slide-renderer";
 import { createRoom, getCurrentUser, DEMO_QUIZ_ID, getLocalQuizById, getLocalSlides, saveLocalSlides } from "@/lib/quizstage";
@@ -53,6 +62,8 @@ function SlideManagerPage() {
   const [correctAnswer, setCorrectAnswer] = useState<CorrectAnswer>("B");
   const [points, setPoints] = useState<number>(100);
   const [timerSeconds, setTimerSeconds] = useState<number | null>(30);
+  const [mobileTab, setMobileTab] = useState<"editor" | "track">("editor");
+  const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
 
   useEffect(() => {
     void (async () => {
@@ -253,24 +264,27 @@ function SlideManagerPage() {
   return (
     <div className="min-h-screen bg-background text-foreground flex flex-col">
       {/* Top Header */}
-      <header className="border-b border-border bg-card/70 sticky top-0 z-30">
-        <div className="mx-auto flex max-w-[1700px] items-center justify-between px-5 py-3 lg:px-8">
-          <div className="flex items-center gap-4">
-            <Link to="/dashboard" className="text-muted-foreground hover:text-foreground">
-              <Button variant="ghost" size="sm">
-                <ArrowLeft className="h-4 w-4 mr-1.5" /> Dashboard
+      {/* Top Header */}
+      <header className="border-b border-border bg-card/90 backdrop-blur-md sticky top-0 z-30 w-full max-w-full overflow-x-hidden">
+        <div className="mx-auto flex max-w-[1700px] items-center justify-between px-3.5 py-2.5 sm:px-6 sm:py-3 lg:px-8">
+          <div className="flex items-center gap-2 sm:gap-4 min-w-0">
+            <Link to="/dashboard" className="text-muted-foreground hover:text-foreground shrink-0">
+              <Button variant="ghost" size="sm" className="h-8 px-2 sm:px-3 text-xs">
+                <ArrowLeft className="h-4 w-4 sm:mr-1.5" />
+                <span className="hidden sm:inline">Dashboard</span>
               </Button>
             </Link>
-            <div className="h-5 w-px bg-border hidden sm:block" />
-            <div>
-              <p className="text-xs font-bold uppercase tracking-widest text-brand">Slide Manager</p>
-              <h1 className="font-display text-lg font-black uppercase truncate max-w-sm sm:max-w-md">
+            <div className="h-5 w-px bg-border hidden sm:block shrink-0" />
+            <div className="min-w-0 flex-1">
+              <p className="text-[10px] sm:text-xs font-bold uppercase tracking-widest text-brand leading-none">Slide Manager</p>
+              <h1 className="font-display text-sm sm:text-lg font-black uppercase truncate max-w-[130px] sm:max-w-md mt-0.5">
                 {quizTitle}
               </h1>
             </div>
           </div>
 
-          <div className="flex items-center gap-3">
+          {/* Desktop Actions */}
+          <div className="hidden sm:flex items-center gap-2.5 shrink-0">
             <Button
               variant="outline"
               size="sm"
@@ -291,13 +305,138 @@ function SlideManagerPage() {
               Launch Live Room
             </Button>
           </div>
+
+          {/* Mobile Actions & Sidebar Drawer */}
+          <div className="flex sm:hidden items-center gap-1.5 shrink-0">
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8 px-2 text-xs"
+              onClick={() => void saveCurrentSlideConfig()}
+              disabled={saving}
+              title="Save Slide Configuration"
+            >
+              {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5 text-brand" />}
+            </Button>
+
+            <Button
+              size="sm"
+              className="h-8 px-2.5 text-xs bg-brand text-brand-foreground font-bold"
+              onClick={() => void openLiveRoom()}
+              disabled={starting}
+            >
+              {starting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5 mr-1" />}
+              Launch
+            </Button>
+
+            <Sheet open={mobileDrawerOpen} onOpenChange={setMobileDrawerOpen}>
+              <SheetTrigger asChild>
+                <Button variant="ghost" size="icon" className="h-8 w-8 touch-press" aria-label="Deck Menu">
+                  <Menu className="h-5 w-5" />
+                </Button>
+              </SheetTrigger>
+              <SheetContent side="right" className="w-[300px] p-5 flex flex-col justify-between">
+                <div>
+                  <SheetHeader className="text-left pb-4 border-b border-border">
+                    <SheetTitle className="font-display text-base font-black uppercase">
+                      Slide Manager
+                    </SheetTitle>
+                    <p className="text-xs text-muted-foreground truncate mt-1">
+                      {quizTitle}
+                    </p>
+                    <div className="mt-2 flex items-center gap-3 text-xs text-muted-foreground font-mono">
+                      <span>{slides.length} slides</span>
+                      <span>•</span>
+                      <span className="text-brand font-semibold">
+                        {slides.filter((s) => s.slide_type === "quiz").length} questions
+                      </span>
+                    </div>
+                  </SheetHeader>
+
+                  <div className="mt-5 space-y-2.5">
+                    <Button
+                      onClick={() => {
+                        setMobileDrawerOpen(false);
+                        void saveCurrentSlideConfig();
+                      }}
+                      disabled={saving}
+                      variant="outline"
+                      className="w-full justify-start text-xs font-bold"
+                    >
+                      <Save className="h-4 w-4 mr-2 text-brand" />
+                      Save Current Slide
+                    </Button>
+
+                    <Button
+                      onClick={() => {
+                        setMobileDrawerOpen(false);
+                        void openLiveRoom();
+                      }}
+                      disabled={starting}
+                      className="w-full justify-start text-xs font-bold bg-brand text-brand-foreground"
+                    >
+                      <Play className="h-4 w-4 mr-2" />
+                      Launch Live Room
+                    </Button>
+
+                    <Button
+                      variant="outline"
+                      onClick={() => {
+                        setMobileTab(mobileTab === "editor" ? "track" : "editor");
+                        setMobileDrawerOpen(false);
+                      }}
+                      className="w-full justify-start text-xs font-bold"
+                    >
+                      <Layers className="h-4 w-4 mr-2 text-brand" />
+                      {mobileTab === "editor" ? "Switch to All Slides Track" : "Switch to Slide Editor"}
+                    </Button>
+                  </div>
+                </div>
+
+                <div className="border-t border-border pt-4">
+                  <Link to="/dashboard" onClick={() => setMobileDrawerOpen(false)}>
+                    <Button variant="outline" className="w-full justify-start text-xs font-bold text-muted-foreground hover:text-foreground">
+                      <ArrowLeft className="h-4 w-4 mr-2" />
+                      Exit to Dashboard
+                    </Button>
+                  </Link>
+                </div>
+              </SheetContent>
+            </Sheet>
+          </div>
         </div>
       </header>
 
+      {/* Mobile Tab Switcher */}
+      <div className="lg:hidden border-b border-border bg-card/60 px-4 py-2 w-full">
+        <div className="flex rounded-lg bg-muted p-1 text-xs w-full max-w-sm mx-auto">
+          <button
+            type="button"
+            onClick={() => setMobileTab("editor")}
+            className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-md font-bold transition-all ${
+              mobileTab === "editor" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground"
+            }`}
+          >
+            <SlidersHorizontal className="h-3.5 w-3.5" />
+            <span>Slide {selectedSlide?.slide_number} (Edit)</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setMobileTab("track")}
+            className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-md font-bold transition-all ${
+              mobileTab === "track" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground"
+            }`}
+          >
+            <Layers className="h-3.5 w-3.5" />
+            <span>All Slides ({slides.length})</span>
+          </button>
+        </div>
+      </div>
+
       {/* 3-Column Studio Layout */}
-      <main className="mx-auto grid max-w-[1700px] w-full flex-1 gap-6 px-5 py-6 lg:grid-cols-[280px_1fr_340px] lg:px-8">
+      <main className="mx-auto grid max-w-[1700px] w-full flex-1 gap-6 px-4 py-5 sm:px-6 sm:py-6 lg:grid-cols-[280px_1fr_340px] lg:px-8">
         {/* Left Column: Slide List Thumbnails */}
-        <section className="flex flex-col gap-3 overflow-hidden border-r border-border pr-4">
+        <section className={`flex flex-col gap-3 overflow-hidden border-b lg:border-b-0 lg:border-r border-border pb-6 lg:pb-0 lg:pr-4 ${mobileTab === "track" ? "block" : "hidden lg:flex"}`}>
           <div className="flex items-center justify-between border-b border-border pb-2">
             <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
               Slide Track ({slides.length})
@@ -311,7 +450,10 @@ function SlideManagerPage() {
               return (
                 <div
                   key={slide.id}
-                  onClick={() => selectSlide(idx)}
+                  onClick={() => {
+                    selectSlide(idx);
+                    setMobileTab("editor");
+                  }}
                   className={`group cursor-pointer rounded-lg border p-2 transition-all ${
                     isSelected
                       ? "border-brand bg-brand/10 ring-2 ring-brand"
@@ -346,7 +488,7 @@ function SlideManagerPage() {
         </section>
 
         {/* Center Column: Large Slide Preview */}
-        <section className="flex flex-col gap-4 min-w-0">
+        <section className={`flex flex-col gap-4 min-w-0 ${mobileTab === "editor" ? "flex" : "hidden lg:flex"}`}>
           <div className="flex items-center justify-between border-b border-border pb-2">
             <div className="flex items-center gap-2">
               <span className="font-mono text-xs text-muted-foreground uppercase">
@@ -389,7 +531,7 @@ function SlideManagerPage() {
         </section>
 
         {/* Right Column: Slide Configuration Panel */}
-        <aside className="border-l border-border pl-6 flex flex-col gap-6">
+        <aside className={`border-t lg:border-t-0 lg:border-l border-border pt-6 lg:pt-0 lg:pl-6 flex flex-col gap-6 ${mobileTab === "editor" ? "flex" : "hidden lg:flex"}`}>
           <div className="border-b border-border pb-3">
             <h2 className="font-display text-lg font-bold uppercase tracking-wide">
               Slide Configuration
@@ -477,13 +619,13 @@ function SlideManagerPage() {
                   </label>
                   <span className="font-mono text-xs font-bold text-brand">{points} pts</span>
                 </div>
-                <div className="flex flex-wrap gap-1.5">
+                <div className="grid grid-cols-3 sm:grid-cols-6 gap-1.5">
                   {[100, 200, 250, 300, 500, 1000].map((val) => (
                     <button
                       key={val}
                       type="button"
                       onClick={() => setPoints(val)}
-                      className={`px-2.5 py-1 text-xs font-mono rounded border transition-colors ${
+                      className={`h-9 flex items-center justify-center text-xs font-mono rounded border transition-colors ${
                         points === val
                           ? "bg-brand text-brand-foreground border-brand font-bold"
                           : "bg-muted/40 border-border hover:border-border/80"
@@ -514,7 +656,7 @@ function SlideManagerPage() {
                     {timerSeconds ? `${timerSeconds}s` : "No limit"}
                   </span>
                 </div>
-                <div className="flex flex-wrap gap-1.5">
+                <div className="grid grid-cols-4 sm:grid-cols-7 gap-1.5">
                   {[
                     { val: null, label: "None" },
                     { val: 10, label: "10s" },
@@ -528,7 +670,7 @@ function SlideManagerPage() {
                       key={String(item.val)}
                       type="button"
                       onClick={() => setTimerSeconds(item.val)}
-                      className={`px-2.5 py-1 text-xs font-mono rounded border transition-colors ${
+                      className={`h-8 flex items-center justify-center text-xs font-mono rounded border transition-colors ${
                         timerSeconds === item.val
                           ? "bg-brand text-brand-foreground border-brand font-bold"
                           : "bg-muted/40 border-border hover:border-border/80"

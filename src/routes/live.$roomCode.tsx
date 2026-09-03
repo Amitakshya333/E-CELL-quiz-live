@@ -15,11 +15,20 @@ import {
   CheckCircle2,
   MonitorPlay,
   BarChart2,
-  Flag
+  Flag,
+  Menu,
+  Smartphone,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from "@/components/ui/sheet";
 import { QuizStageMark } from "@/components/quizstage-shell";
 import { SlideRenderer, type SlideData } from "@/components/slides/slide-renderer";
 import { supabase } from "@/integrations/supabase/client";
@@ -72,8 +81,8 @@ function LiveRoomPage() {
   const [isHost, setIsHost] = useState(false);
   const [now, setNow] = useState(Date.now());
   const [participants, setParticipants] = useState<Participant[]>([]);
-  const [answers, setAnswers] = useState<Answer[]>([]);
   const [scoringBusy, setScoringBusy] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   // Sync clock every 500ms
   useEffect(() => {
@@ -468,12 +477,12 @@ function LiveRoomPage() {
   return (
     <div className="min-h-screen bg-background text-foreground flex flex-col">
       {/* Top Navigation Header */}
-      <header className="border-b border-border bg-card/60 backdrop-blur-sm sticky top-0 z-30">
-        <div className="mx-auto flex max-w-[1700px] items-center justify-between px-5 py-3 lg:px-8">
-          <div className="flex items-center gap-6">
+      <header className="border-b border-border bg-card/90 backdrop-blur-md sticky top-0 z-30 w-full max-w-full overflow-x-hidden">
+        <div className="mx-auto flex max-w-[1700px] items-center justify-between px-3.5 py-2.5 sm:px-6 sm:py-3 lg:px-8">
+          <div className="flex items-center gap-3 sm:gap-6 min-w-0">
             <QuizStageMark />
             <div className="hidden sm:block h-6 w-px bg-border" />
-            <div className="hidden sm:block">
+            <div className="hidden sm:block min-w-0">
               <p className="font-display text-sm font-bold uppercase tracking-wide truncate max-w-xs">{title}</p>
               <div className="flex items-center gap-2">
                 <span className="font-mono text-xs text-brand font-semibold">ROOM: {room.room_code}</span>
@@ -485,7 +494,8 @@ function LiveRoomPage() {
             </div>
           </div>
 
-          <div className="flex items-center gap-2.5">
+          {/* Desktop Toolbar */}
+          <div className="hidden md:flex items-center gap-2.5">
             <a
               href={`/projector/${room.room_code}`}
               target="_blank"
@@ -514,6 +524,108 @@ function LiveRoomPage() {
                 <ArrowLeft className="mr-1.5 h-4 w-4" /> Exit
               </Button>
             </Link>
+          </div>
+
+          {/* Mobile Actions & Sidebar Drawer */}
+          <div className="flex md:hidden items-center gap-2">
+            <a
+              href={`/projector/${room.room_code}`}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              <Button variant="outline" size="sm" className="h-8 px-2.5 text-[11px] font-bold border-brand/40 text-brand">
+                <MonitorPlay className="h-3.5 w-3.5 mr-1" />
+                Projector
+              </Button>
+            </a>
+
+            <Sheet open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
+              <SheetTrigger asChild>
+                <Button variant="ghost" size="icon" className="h-8 w-8 touch-press" aria-label="Room Menu">
+                  <Menu className="h-5 w-5" />
+                </Button>
+              </SheetTrigger>
+              <SheetContent side="right" className="w-[300px] p-5 flex flex-col justify-between">
+                <div>
+                  <SheetHeader className="text-left pb-4 border-b border-border">
+                    <div className="flex items-center justify-between">
+                      <SheetTitle className="font-display text-base font-black uppercase">
+                        Host Console
+                      </SheetTitle>
+                      <Badge variant="outline" className="font-mono text-[10px] uppercase">
+                        {room.status}
+                      </Badge>
+                    </div>
+                    <p className="font-mono text-xs font-bold text-brand mt-1">
+                      ROOM CODE: {room.room_code}
+                    </p>
+                    <p className="text-xs text-muted-foreground truncate mt-0.5">
+                      {title}
+                    </p>
+                    <div className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
+                      <Users className="h-3.5 w-3.5 text-brand" />
+                      <span>{totalParticipants} participants connected</span>
+                    </div>
+                  </SheetHeader>
+
+                  <div className="mt-5 space-y-2.5">
+                    <a
+                      href={`/projector/${room.room_code}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="w-full block"
+                    >
+                      <Button className="w-full justify-start text-xs font-bold bg-brand text-brand-foreground">
+                        <MonitorPlay className="h-4 w-4 mr-2" />
+                        Open Projector Screen
+                        <ExternalLink className="ml-auto h-3.5 w-3.5 opacity-70" />
+                      </Button>
+                    </a>
+
+                    <Link
+                      to="/rooms/$roomId/results"
+                      params={{ roomId: room.id }}
+                      onClick={() => setMobileMenuOpen(false)}
+                      className="w-full block"
+                    >
+                      <Button variant="outline" className="w-full justify-start text-xs font-bold">
+                        <BarChart2 className="h-4 w-4 mr-2 text-brand" />
+                        Live Room Analytics
+                      </Button>
+                    </Link>
+
+                    <Button
+                      variant="outline"
+                      className="w-full justify-start text-xs font-bold"
+                      onClick={() => {
+                        if (navigator.share) {
+                          navigator.share({
+                            title: `Join Quiz: ${title}`,
+                            text: `Join room code ${room.room_code} on E-Cell Quiz!`,
+                            url: `${window.location.origin}/join?code=${room.room_code}`,
+                          }).catch(() => {});
+                        } else {
+                          navigator.clipboard.writeText(`${window.location.origin}/join?code=${room.room_code}`);
+                          toast.success("Join link copied to clipboard!");
+                        }
+                      }}
+                    >
+                      <Smartphone className="h-4 w-4 mr-2 text-brand" />
+                      Share Join Link
+                    </Button>
+                  </div>
+                </div>
+
+                <div className="border-t border-border pt-4">
+                  <Link to="/dashboard" onClick={() => setMobileMenuOpen(false)}>
+                    <Button variant="outline" className="w-full justify-start text-xs font-bold text-destructive hover:text-destructive">
+                      <ArrowLeft className="h-4 w-4 mr-2" />
+                      Exit to Dashboard
+                    </Button>
+                  </Link>
+                </div>
+              </SheetContent>
+            </Sheet>
           </div>
         </div>
       </header>
@@ -712,8 +824,8 @@ function LiveRoomPage() {
               </div>
             </div>
 
-            {/* Keyboard shortcuts hints */}
-            <div className="flex flex-wrap items-center gap-3 pt-3 border-t border-border text-[11px] text-muted-foreground font-mono">
+            {/* Keyboard shortcuts hints (Desktop only) */}
+            <div className="hidden md:flex flex-wrap items-center gap-3 pt-3 border-t border-border text-[11px] text-muted-foreground font-mono">
               <span className="font-bold text-foreground">SHORTCUTS:</span>
               <span><kbd className="px-1.5 py-0.5 bg-muted rounded border border-border">Space</kbd> Action</span>
               <span><kbd className="px-1.5 py-0.5 bg-muted rounded border border-border">O</kbd> Open</span>

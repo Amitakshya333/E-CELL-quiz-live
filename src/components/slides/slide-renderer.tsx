@@ -56,27 +56,27 @@ export function SlideRenderer({
       {/* Header bar on slide */}
       <div
         className={`relative z-10 flex items-center justify-between border-b border-white/10 ${
-          isThumbnail ? "px-2 py-1" : "px-8 py-4"
+          isThumbnail ? "px-2 py-1" : "px-3 py-1.5 sm:px-6 sm:py-2.5 md:px-8 md:py-3.5"
         }`}
       >
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5 sm:gap-2 min-w-0 flex-1 mr-2">
           <span
-            className={`font-black uppercase tracking-wider text-orange-500 ${
-              isThumbnail ? "text-[8px]" : "text-xs tracking-widest"
+            className={`font-black uppercase tracking-wider text-orange-500 shrink-0 ${
+              isThumbnail ? "text-[8px]" : "text-[10px] sm:text-xs tracking-wider"
             }`}
           >
-            QUIZSTAGE
+            E-CELL
           </span>
-          <span className="text-white/30">•</span>
-          <span className={`font-mono uppercase text-white/60 truncate ${isThumbnail ? "text-[7px] max-w-[80px]" : "text-xs max-w-sm"}`}>
+          <span className="text-white/30 shrink-0">•</span>
+          <span className={`font-mono uppercase text-white/70 truncate ${isThumbnail ? "text-[7px] max-w-[70px]" : "text-[10px] sm:text-xs max-w-[150px] sm:max-w-sm"}`}>
             {quizTitle}
           </span>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 shrink-0">
           <span
-            className={`font-mono uppercase text-white/50 ${
-              isThumbnail ? "text-[7px]" : "text-xs"
+            className={`font-mono uppercase text-white/60 shrink-0 whitespace-nowrap ${
+              isThumbnail ? "text-[7px]" : "text-[10px] sm:text-xs font-semibold"
             }`}
           >
             Slide {String(slide.slide_number).padStart(2, "0")}
@@ -86,8 +86,8 @@ export function SlideRenderer({
 
       {/* Main Slide Body */}
       <div
-        className={`relative z-10 flex h-[calc(100%-2.5rem)] flex-col justify-between ${
-          isThumbnail ? "p-2" : "p-8 sm:p-12"
+        className={`relative z-10 flex h-[calc(100%-2.2rem)] flex-col justify-between ${
+          isThumbnail ? "p-2" : "p-3 sm:p-5 md:p-8 lg:p-10"
         }`}
       >
         {renderSlideContent(slide, isThumbnail, showCorrectAnswer)}
@@ -95,7 +95,7 @@ export function SlideRenderer({
         {/* Footer footer info */}
         <div
           className={`flex items-center justify-between border-t border-white/10 text-white/40 ${
-            isThumbnail ? "pt-1 text-[6px]" : "pt-4 text-xs font-mono"
+            isThumbnail ? "pt-1 text-[6px]" : "pt-2.5 sm:pt-4 text-[10px] sm:text-xs font-mono"
           }`}
         >
           <span>E-CELL LIVE COMPETITION</span>
