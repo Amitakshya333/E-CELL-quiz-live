@@ -1,8 +1,9 @@
-import { initializeApp, getApps, getApp } from "firebase/app";
 import {
   getAuth,
   GoogleAuthProvider,
   signInWithPopup,
+  signInWithRedirect,
+  getRedirectResult,
   signOut as firebaseSignOut,
   type User,
 } from "firebase/auth";
@@ -23,8 +24,25 @@ export const googleProvider = new GoogleAuthProvider();
 googleProvider.setCustomParameters({ prompt: "select_account" });
 
 export async function signInWithGoogle(): Promise<User> {
-  const result = await signInWithPopup(auth, googleProvider);
-  return result.user;
+  try {
+    const result = await signInWithPopup(auth, googleProvider);
+    return result.user;
+  } catch (err: any) {
+    if (err?.code === "auth/popup-blocked") {
+      await signInWithRedirect(auth, googleProvider);
+      throw new Error("Redirecting to Google Sign-In...");
+    }
+    throw err;
+  }
+}
+
+export async function checkRedirectAuth(): Promise<User | null> {
+  try {
+    const result = await getRedirectResult(auth);
+    return result?.user ?? null;
+  } catch {
+    return null;
+  }
 }
 
 export async function signOutFirebase(): Promise<void> {

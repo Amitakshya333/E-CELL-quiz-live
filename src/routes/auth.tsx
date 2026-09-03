@@ -43,6 +43,19 @@ function AuthPage() {
 
   useEffect(() => {
     void (async () => {
+      try {
+        const { checkRedirectAuth } = await import("@/integrations/firebase/client");
+        const redirectUser = await checkRedirectAuth();
+        if (redirectUser) {
+          loginAsLocalHost(redirectUser.email ?? "host@ecell.suiit.ac.in", redirectUser.displayName ?? "E-Cell Host");
+          toast.success(`Welcome, ${redirectUser.displayName || "Host"}!`);
+          void navigate({ to: "/dashboard" });
+          return;
+        }
+      } catch {
+        // ignore
+      }
+
       const user = await getCurrentUser();
       if (user) {
         void navigate({ to: "/dashboard" });
@@ -72,7 +85,11 @@ function AuthPage() {
       if (err?.code === "auth/popup-closed-by-user" || err?.code === "auth/cancelled-popup-request") {
         toast.info("Google sign-in was cancelled.");
       } else if (err?.code === "auth/operation-not-allowed") {
-        toast.error("Google sign-in provider is not yet enabled in Firebase Console.");
+        toast.error("Google sign-in is not enabled yet in Firebase Console.");
+      } else if (err?.code === "auth/unauthorized-domain") {
+        toast.error(`Domain "${window.location.hostname}" is not authorized. Please refresh and try again.`);
+      } else if (err?.message?.includes("Redirecting")) {
+        // User redirected to Google
       } else {
         toast.error(err?.message ?? "Google sign-in failed.");
       }
