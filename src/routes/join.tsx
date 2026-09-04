@@ -8,6 +8,7 @@ import { QuizStageMark } from "@/components/quizstage-shell";
 import { supabase } from "@/integrations/supabase/client";
 
 import { getLocalRoomByCode } from "@/lib/quizstage";
+import { getRoomFromFirebase } from "@/lib/firebase-quiz";
 
 export const Route = createFileRoute("/join")({
   head: () => ({
@@ -42,25 +43,29 @@ function JoinPage() {
       let targetCode = normalized;
       let foundRoom = false;
 
+      // 1. Authoritative check in Firebase Firestore
       try {
-        const { data: room } = await supabase
-          .from("rooms")
-          .select("id,room_code,status")
-          .eq("room_code", normalized)
-          .maybeSingle();
+        const cloudRoom = await getRoomFromFirebase(normalized);
+        if (cloudRoom) {
+          foundRoom = true;
+          targetCode = cloudRoom.room_code;
+        }
+      } catch (err) {
+        console.warn("Firebase room lookup error:", err);
+      }
 
-        if (room) foundRoom = true;
-      } catch {
-        // Supabase unavailable, check local
+      // 2. Local fallback if offline
+      if (!foundRoom) {
+        const local = getLocalRoomByCode(normalized);
+        if (local) {
+          foundRoom = true;
+          targetCode = local.room_code;
+        }
       }
 
       if (!foundRoom) {
-        const local = getLocalRoomByCode(normalized);
-        if (!local) {
-          toast.error("That room code does not exist. Check the big screen!");
-          return;
-        }
-        targetCode = local.room_code;
+        toast.error("That room code does not exist. Check the big screen!");
+        return;
       }
 
       // Navigate to /join/$roomCode

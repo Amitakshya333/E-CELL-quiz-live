@@ -16,8 +16,18 @@ import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { QrCodeDisplay } from "@/components/qr-code";
 import { SlideRenderer, type SlideData } from "@/components/slides/slide-renderer";
-import { supabase } from "@/integrations/supabase/client";
 import { getLocalRoomByCode, getLocalSlides, getLocalQuizById } from "@/lib/quizstage";
+import {
+  getRoomFromFirebase,
+  subscribeToRoomInFirebase,
+  subscribeToParticipantsInFirebase,
+  subscribeToAnswersInFirebase,
+  getCanonicalStartupDeck,
+  type FirebaseRoom,
+  type FirebaseParticipant,
+  type FirebaseAnswer,
+  type FirebaseSlide,
+} from "@/lib/firebase-quiz";
 
 export const Route = createFileRoute("/projector/$roomCode")({
   head: () => ({
@@ -91,17 +101,25 @@ function ProjectorPage() {
       try {
         const normalized = roomCode.toUpperCase();
         let targetRoom: Room | null = null;
+        let mappedSlides: SlideData[] = [];
+
+        // 1. Authoritative check in Firebase Firestore
         try {
-          const { data: roomData } = await supabase
-            .from("rooms")
-            .select("id,room_code,quiz_id,status,current_slide_id,question_state,question_started_at,question_ends_at")
-            .eq("room_code", normalized)
-            .maybeSingle();
-          if (roomData) targetRoom = roomData as Room;
-        } catch {
-          // Cloud query error
+          const cloudRoom = await getRoomFromFirebase(normalized);
+          if (cloudRoom) {
+            targetRoom = cloudRoom as any;
+            if (cloudRoom.slides && cloudRoom.slides.length > 0) {
+              mappedSlides = cloudRoom.slides as SlideData[];
+            }
+            if (cloudRoom.quiz_title) {
+              setQuizTitle(cloudRoom.quiz_title);
+            }
+          }
+        } catch (err) {
+          console.warn("Firebase room lookup error:", err);
         }
 
+        // 2. Fall back to local room if offline
         if (!targetRoom) {
           const local = getLocalRoomByCode(normalized);
           if (local) targetRoom = local as Room;
@@ -115,72 +133,15 @@ function ProjectorPage() {
 
         setRoom(targetRoom);
 
-        let mappedSlides: SlideData[] = [];
-        try {
-          const [
-            { data: quiz },
-            { data: slideRows },
-            { data: participantRows },
-            { data: answerRows },
-          ] = await Promise.all([
-            supabase.from("quizzes").select("title").eq("id", targetRoom.quiz_id).maybeSingle(),
-            supabase
-              .from("slides")
-              .select("id,slide_number,page_number,slide_type,question_metadata(correct_answer,points,timer_seconds)")
-              .eq("quiz_id", targetRoom.quiz_id)
-              .order("slide_number"),
-            supabase.from("participants").select("id,display_name,score").eq("room_id", targetRoom.id).order("score", { ascending: false }),
-            supabase.from("answers").select("id,participant_id,selected_answer,is_correct").eq("room_id", targetRoom.id),
-          ]);
-
-          // Check local storage first (contains user-customized question text, options, and slide titles)
-          const localQuiz = getLocalQuizById(targetRoom.quiz_id);
-          if (localQuiz?.title) setQuizTitle(localQuiz.title);
-          else if (quiz?.title) setQuizTitle(quiz.title);
-
+        if (mappedSlides.length === 0) {
           const localSlides = getLocalSlides(targetRoom.quiz_id);
           if (localSlides && localSlides.length > 0) {
             mappedSlides = localSlides as SlideData[];
-          } else if (slideRows && slideRows.length > 0) {
-            mappedSlides = (slideRows ?? []).map((s: any) => ({
-              id: s.id,
-              slide_number: s.slide_number,
-              page_number: s.page_number,
-              slide_type: s.slide_type,
-              question_metadata: s.question_metadata?.[0] || s.question_metadata || null,
-            }));
           }
-
-          if (participantRows) setParticipants(participantRows as Participant[]);
-          if (answerRows) setAnswers(answerRows as Answer[]);
-        } catch {
-          // fallback
         }
 
-        // Load local participants
-        try {
-          const localParts = JSON.parse(localStorage.getItem(`quizstage-participants-${normalized}`) || "[]");
-          if (localParts.length > 0) {
-            setParticipants((prev) => {
-              const map = new Map<string, Participant>();
-              prev.forEach((p) => map.set(p.id, p));
-              localParts.forEach((p: Participant) => map.set(p.id, p));
-              return Array.from(map.values()).sort((a, b) => (b.score || 0) - (a.score || 0));
-            });
-          }
-        } catch {}
-
         if (mappedSlides.length === 0) {
-          mappedSlides = [
-            { id: "30000000-0000-4000-8000-000000000001", slide_number: 1, page_number: 1, slide_type: "normal", slide_title: "CAN YOU CRACK THE STARTUP?" } as SlideData,
-            { id: "30000000-0000-4000-8000-000000000002", slide_number: 2, page_number: 2, slide_type: "normal", slide_title: "HOUSE RULES", question_text: "Scan QR → Answer fast → Top scorers win!" } as SlideData,
-            { id: "30000000-0000-4000-8000-000000000003", slide_number: 3, page_number: 3, slide_type: "join" },
-            { id: "30000000-0000-4000-8000-000000000004", slide_number: 4, page_number: 4, slide_type: "quiz", question_text: "What is the #1 reason startups fail?", options: { A: "Co-founder disputes", B: "Running out of cash", C: "Building something nobody wants", D: "Bad marketing" }, question_metadata: { correct_answer: "C", points: 200, timer_seconds: 30 } } as SlideData,
-            { id: "30000000-0000-4000-8000-000000000005", slide_number: 5, page_number: 5, slide_type: "quiz", question_text: "If Net Burn is ₹1L/month and bank balance is ₹8L, what is the runway?", options: { A: "6 Months", B: "12 Months", C: "15 Months", D: "8 Months" }, question_metadata: { correct_answer: "D", points: 300, timer_seconds: 20 } } as SlideData,
-            { id: "30000000-0000-4000-8000-000000000006", slide_number: 6, page_number: 6, slide_type: "leaderboard" },
-            { id: "30000000-0000-4000-8000-000000000007", slide_number: 7, page_number: 7, slide_type: "quiz", question_text: "Which platform was originally called 'Burbn'?", options: { A: "Instagram", B: "Twitter / X", C: "Airbnb", D: "Slack" }, question_metadata: { correct_answer: "A", points: 500, timer_seconds: 45 } } as SlideData,
-            { id: "30000000-0000-4000-8000-000000000008", slide_number: 8, page_number: 8, slide_type: "results" },
-          ];
+          mappedSlides = getCanonicalStartupDeck() as SlideData[];
         }
         setSlides(mappedSlides);
       } catch (err) {
@@ -192,45 +153,31 @@ function ProjectorPage() {
     })();
   }, [roomCode, navigate]);
 
-  // Real-time updates subscription + BroadcastChannel
+  // Real-time updates subscription via Firebase Firestore + BroadcastChannel
   useEffect(() => {
-    if (!room?.id) return;
     const normalized = roomCode.toUpperCase();
 
-    const channel = supabase
-      .channel(`projector-room-${room.id}`)
-      .on(
-        "postgres_changes",
-        { event: "UPDATE", schema: "public", table: "rooms", filter: `id=eq.${room.id}` },
-        (payload) => {
-          setRoom(payload.new as Room);
+    // 1. Firebase Firestore Room Listener
+    const unsubRoom = subscribeToRoomInFirebase(normalized, (cloudRoom) => {
+      if (cloudRoom) {
+        setRoom(cloudRoom as any);
+        if (cloudRoom.slides && cloudRoom.slides.length > 0) {
+          setSlides(cloudRoom.slides as SlideData[]);
         }
-      )
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "participants", filter: `room_id=eq.${room.id}` },
-        async () => {
-          const { data } = await supabase
-            .from("participants")
-            .select("id,display_name,score")
-            .eq("room_id", room.id)
-            .order("score", { ascending: false });
-          if (data) setParticipants(data as Participant[]);
-        }
-      )
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "answers", filter: `room_id=eq.${room.id}` },
-        async () => {
-          const { data } = await supabase
-            .from("answers")
-            .select("id,participant_id,selected_answer,is_correct")
-            .eq("room_id", room.id);
-          if (data) setAnswers(data as Answer[]);
-        }
-      )
-      .subscribe();
+      }
+    });
 
+    // 2. Firebase Firestore Participants Listener (Live leaderboard & podium)
+    const unsubParts = subscribeToParticipantsInFirebase(normalized, (parts) => {
+      setParticipants(parts as any);
+    });
+
+    // 3. Firebase Firestore Answers Listener
+    const unsubAnswers = subscribeToAnswersInFirebase(normalized, (ansList) => {
+      setAnswers(ansList as any);
+    });
+
+    // 4. BroadcastChannel for instant local cross-tab sync
     let bc: BroadcastChannel | null = null;
     try {
       bc = new BroadcastChannel(`quizstage-room-${normalized}`);
@@ -247,20 +194,17 @@ function ProjectorPage() {
             const updated = prev.map((p) => p.id === event.data.participant.id ? event.data.participant : p);
             return updated.sort((a: any, b: any) => (b.score || 0) - (a.score || 0));
           });
-        } else if (event.data?.type === "ANSWER_SUBMITTED") {
-          setAnswers((prev) => {
-            if (prev.some((a) => a.id === event.data.answer.id)) return prev;
-            return [...prev, event.data.answer];
-          });
         }
       };
     } catch {}
 
     return () => {
-      void supabase.removeChannel(channel);
+      unsubRoom();
+      unsubParts();
+      unsubAnswers();
       if (bc) bc.close();
     };
-  }, [room?.id, roomCode]);
+  }, [roomCode]);
 
   const currentSlide = useMemo(() => {
     return slides.find((s) => s.id === room?.current_slide_id) || slides[0];

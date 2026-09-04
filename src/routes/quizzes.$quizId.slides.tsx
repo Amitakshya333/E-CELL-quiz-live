@@ -83,45 +83,29 @@ function SlideManagerPage() {
         let title = "Quiz Presentation";
         let mapped: SlideData[] = [];
 
+        // 1. Authoritative check in Firebase Firestore
         try {
-          const { data: quiz } = await supabase
-            .from("quizzes")
-            .select("id,title,owner_id")
-            .eq("id", quizId)
-            .maybeSingle();
+          const { getQuizFromFirebase } = await import("@/lib/firebase-quiz");
+          const fbQuiz = await getQuizFromFirebase(quizId);
+          if (fbQuiz) {
+            title = fbQuiz.title;
+            if (fbQuiz.slides && fbQuiz.slides.length > 0) {
+              mapped = fbQuiz.slides as SlideData[];
+            }
+          }
+        } catch (err) {
+          console.warn("Firebase quiz lookup error:", err);
+        }
 
-          if (quiz?.title) title = quiz.title;
-
-        // 1. Check local storage first (preserves user-edited titles, questions, and options)
-        const localSlides = getLocalSlides(quizId);
-        const localQuiz = getLocalQuizById(quizId);
-        if (localQuiz?.title) title = localQuiz.title;
-
-        if (localSlides && localSlides.length > 0) {
-          mapped = localSlides;
-        } else {
-          // 2. Fall back to Supabase if no local slides exist
-          const { data: slideRows } = await supabase
-            .from("slides")
-            .select("id,slide_number,page_number,slide_type,question_metadata(correct_answer,points,timer_seconds)")
-            .eq("quiz_id", quizId)
-            .order("slide_number");
-
-          if (slideRows && slideRows.length > 0) {
-            mapped = slideRows.map((s: any) => ({
-              id: s.id,
-              slide_number: s.slide_number,
-              page_number: s.page_number,
-              slide_type: s.slide_type,
-              question_metadata: s.question_metadata?.[0] || s.question_metadata || null,
-            }));
-            // Cache locally
-            saveLocalSlides(quizId, mapped);
+        // 2. Check local storage if not in Firebase
+        if (mapped.length === 0) {
+          const localSlides = getLocalSlides(quizId);
+          const localQuiz = getLocalQuizById(quizId);
+          if (localQuiz?.title) title = localQuiz.title;
+          if (localSlides && localSlides.length > 0) {
+            mapped = localSlides;
           }
         }
-      } catch {
-        // Cloud error fallback
-      }
 
         if (mapped.length === 0 && quizId === DEMO_QUIZ_ID) {
           title = "CAN YOU CRACK THE STARTUP?";
@@ -224,31 +208,17 @@ function SlideManagerPage() {
       saveLocalSlides(quizId, updatedSlides);
       setSlides(updatedSlides);
 
-      // 2. Best-effort Supabase sync (non-blocking)
+      // 2. Authoritatively sync to Firebase Firestore
       try {
-        await supabase
-          .from("slides")
-          .update({ slide_type: currentType })
-          .eq("id", selectedSlide.id);
-
-        if (currentType === "quiz") {
-          await supabase
-            .from("question_metadata")
-            .upsert({
-              slide_id: selectedSlide.id,
-              correct_answer: correctAnswer,
-              points: Math.max(1, points),
-              timer_seconds: timerSeconds,
-              scoring_mode: "fixed_points",
-            });
-        } else {
-          await supabase
-            .from("question_metadata")
-            .delete()
-            .eq("slide_id", selectedSlide.id);
-        }
-      } catch {
-        // Supabase sync failed — data is safely in localStorage
+        const { saveQuizInFirebase } = await import("@/lib/firebase-quiz");
+        await saveQuizInFirebase({
+          id: quizId,
+          title: quizTitle,
+          owner_id: "host",
+          slides: updatedSlides as any,
+        });
+      } catch (err) {
+        console.warn("Firebase slide save error:", err);
       }
 
       toast.success(`Slide ${selectedSlide.slide_number} configuration saved.`);

@@ -17,8 +17,18 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { QuizStageMark } from "@/components/quizstage-shell";
-import { supabase } from "@/integrations/supabase/client";
 import { getLocalRoomByCode, getLocalSlides, getLocalQuizById } from "@/lib/quizstage";
+import {
+  getRoomFromFirebase,
+  subscribeToRoomInFirebase,
+  joinRoomInFirebase,
+  submitAnswerInFirebase,
+  subscribeToParticipantsInFirebase,
+  getCanonicalStartupDeck,
+  type FirebaseRoom,
+  type FirebaseParticipant,
+  type FirebaseSlide,
+} from "@/lib/firebase-quiz";
 
 export const Route = createFileRoute("/join/$roomCode")({
   head: () => ({
@@ -105,19 +115,25 @@ export function ParticipantLivePage() {
       try {
         const normalizedCode = roomCode.toUpperCase();
         let targetRoom: Room | null = null;
+        let slideList: Slide[] = [];
 
+        // 1. Check Firebase Firestore
         try {
-          const { data: roomData } = await supabase
-            .from("rooms")
-            .select("id,room_code,quiz_id,status,current_slide_id,question_state,question_started_at,question_ends_at")
-            .eq("room_code", normalizedCode)
-            .maybeSingle();
-
-          if (roomData) targetRoom = roomData as Room;
-        } catch {
-          // Cloud error
+          const cloudRoom = await getRoomFromFirebase(normalizedCode);
+          if (cloudRoom) {
+            targetRoom = cloudRoom as any;
+            if (cloudRoom.slides && cloudRoom.slides.length > 0) {
+              slideList = cloudRoom.slides as Slide[];
+            }
+            if (cloudRoom.quiz_title) {
+              setQuizTitle(cloudRoom.quiz_title);
+            }
+          }
+        } catch (err) {
+          console.warn("Firebase room lookup error:", err);
         }
 
+        // 2. Fall back to local room if offline
         if (!targetRoom) {
           const local = getLocalRoomByCode(normalizedCode);
           if (local) targetRoom = local as Room;
@@ -131,45 +147,15 @@ export function ParticipantLivePage() {
 
         setRoom(targetRoom);
 
-        // Load slides
-        let slideList: Slide[] = [];
-        try {
-          // 1. Prioritize local slides (contains question text & option labels)
-          const localQuiz = getLocalQuizById(targetRoom.quiz_id);
-          if (localQuiz?.title) setQuizTitle(localQuiz.title);
-
+        if (slideList.length === 0) {
           const localSlides = getLocalSlides(targetRoom.quiz_id);
           if (localSlides && localSlides.length > 0) {
             slideList = localSlides as Slide[];
-          } else {
-            const [{ data: quiz }, { data: slideRows }] = await Promise.all([
-              supabase.from("quizzes").select("title").eq("id", targetRoom.quiz_id).maybeSingle(),
-              supabase
-                .from("slides")
-                .select("id,slide_number,slide_type,question_metadata(points,timer_seconds)")
-                .eq("quiz_id", targetRoom.quiz_id)
-                .order("slide_number"),
-            ]);
-
-            if (quiz?.title) setQuizTitle(quiz.title);
-            if (slideRows && slideRows.length > 0) slideList = slideRows as Slide[];
           }
-        } catch {
-          // Ignore
         }
 
         if (slideList.length === 0) {
-          // Fallback slides
-          slideList = [
-            { id: "30000000-0000-4000-8000-000000000001", slide_number: 1, slide_type: "normal" },
-            { id: "30000000-0000-4000-8000-000000000002", slide_number: 2, slide_type: "normal" },
-            { id: "30000000-0000-4000-8000-000000000003", slide_number: 3, slide_type: "join" },
-            { id: "30000000-0000-4000-8000-000000000004", slide_number: 4, slide_type: "quiz", question_metadata: { points: 200, timer_seconds: 30 } },
-            { id: "30000000-0000-4000-8000-000000000005", slide_number: 5, slide_type: "quiz", question_metadata: { points: 300, timer_seconds: 20 } },
-            { id: "30000000-0000-4000-8000-000000000006", slide_number: 6, slide_type: "leaderboard" },
-            { id: "30000000-0000-4000-8000-000000000007", slide_number: 7, slide_type: "quiz", question_metadata: { points: 500, timer_seconds: 45 } },
-            { id: "30000000-0000-4000-8000-000000000008", slide_number: 8, slide_type: "results" },
-          ];
+          slideList = getCanonicalStartupDeck() as Slide[];
         }
         setSlides(slideList);
 
@@ -183,24 +169,6 @@ export function ParticipantLivePage() {
             }
           }
         } catch {}
-
-        const storedParticipantId = localStorage.getItem(`quizstage-participant-${normalizedCode}`);
-        if (storedParticipantId) {
-          try {
-            const { data: partData } = await supabase
-              .from("participants")
-              .select("id,display_name,score,room_id")
-              .eq("id", storedParticipantId)
-              .maybeSingle();
-
-            if (partData) {
-              setParticipant(partData as Participant);
-              localStorage.setItem(`quizstage-participant-data-${normalizedCode}`, JSON.stringify(partData));
-            }
-          } catch {
-            // Ignore
-          }
-        }
       } catch (err) {
         console.error(err);
         toast.error("Error connecting to room.");
@@ -210,31 +178,33 @@ export function ParticipantLivePage() {
     })();
   }, [roomCode, navigate]);
 
-  // 2. Real-time Subscription to Room & BroadcastChannel
+  // 2. Real-time Subscription to Room & Participants via Firebase Firestore
   useEffect(() => {
-    if (!room?.id) return;
     const normalizedCode = roomCode.toUpperCase();
 
-    // Supabase Channel
-    const channel = supabase
-      .channel(`participant-room-${room.id}`)
-      .on(
-        "postgres_changes",
-        { event: "UPDATE", schema: "public", table: "rooms", filter: `id=eq.${room.id}` },
-        (payload) => {
-          setRoom(payload.new as Room);
+    // 1. Firebase Firestore Room Listener
+    const unsubRoom = subscribeToRoomInFirebase(normalizedCode, (cloudRoom) => {
+      if (cloudRoom) {
+        setRoom(cloudRoom as any);
+        if (cloudRoom.slides && cloudRoom.slides.length > 0) {
+          setSlides(cloudRoom.slides as Slide[]);
         }
-      )
-      .on(
-        "postgres_changes",
-        { event: "UPDATE", schema: "public", table: "participants", filter: `id=eq.${participant?.id}` },
-        (payload) => {
-          setParticipant(payload.new as Participant);
-        }
-      )
-      .subscribe();
+      }
+    });
 
-    // BroadcastChannel for instant local cross-tab sync
+    // 2. Firebase Firestore Participants Listener (for live scores and ranking)
+    const unsubParts = subscribeToParticipantsInFirebase(normalizedCode, (parts) => {
+      if (participant) {
+        const found = parts.find((p) => p.id === participant.id);
+        if (found) {
+          setParticipant((prev) => (prev ? { ...prev, score: found.score } : prev));
+          const rank = parts.findIndex((p) => p.id === participant.id) + 1;
+          setMyRank(rank > 0 ? rank : null);
+        }
+      }
+    });
+
+    // 3. BroadcastChannel for instant local cross-tab sync
     let bc: BroadcastChannel | null = null;
     try {
       bc = new BroadcastChannel(`quizstage-room-${normalizedCode}`);
@@ -248,15 +218,14 @@ export function ParticipantLivePage() {
           } catch {}
         }
       };
-    } catch {
-      // BroadcastChannel unavailable
-    }
+    } catch {}
 
     return () => {
-      void supabase.removeChannel(channel);
+      unsubRoom();
+      unsubParts();
       if (bc) bc.close();
     };
-  }, [room?.id, participant?.id, roomCode]);
+  }, [roomCode, participant?.id]);
 
   // Reset selected option when slide changes
   useEffect(() => {
@@ -283,22 +252,14 @@ export function ParticipantLivePage() {
       void (async () => {
         let scored = false;
         try {
-          const [{ data: ans }, { data: allParts }] = await Promise.all([
-            supabase
-              .from("answers")
-              .select("is_correct,points_awarded")
-              .eq("room_id", room.id)
-              .eq("participant_id", participant.id)
-              .eq("slide_id", currentSlide.id)
-              .maybeSingle(),
-            supabase
-              .from("participants")
-              .select("id,score")
-              .eq("room_id", room.id)
-              .order("score", { ascending: false }),
-          ]);
+          const { doc, getDoc } = await import("firebase/firestore");
+          const { db } = await import("@/integrations/firebase/client");
+          const ansSnap = await getDoc(
+            doc(db, "rooms", room.room_code.toUpperCase(), "answers", `${participant.id}_${currentSlide.id}`)
+          );
 
-          if (ans) {
+          if (ansSnap.exists()) {
+            const ans = ansSnap.data() as any;
             scored = true;
             setMyAnswerResult({
               is_correct: ans.is_correct,
@@ -307,11 +268,6 @@ export function ParticipantLivePage() {
             if (ans.is_correct && typeof navigator !== "undefined" && "vibrate" in navigator) {
               try { navigator.vibrate([80, 50, 80]); } catch {}
             }
-          }
-
-          if (allParts && allParts.length > 0) {
-            const idx = allParts.findIndex((p) => p.id === participant.id);
-            if (idx >= 0) setMyRank(idx + 1);
           }
         } catch {
           // Ignore
@@ -372,50 +328,20 @@ export function ParticipantLivePage() {
 
     setJoining(true);
     try {
-      let newPart: Participant | null = null;
-      try {
-        const { data, error: insertError } = await supabase
-          .from("participants")
-          .insert({
-            room_id: room.id,
-            display_name: cleanName,
-            score: 0,
-          })
-          .select("id,display_name,score,room_id")
-          .single();
-
-        if (!insertError && data) newPart = data as Participant;
-      } catch {
-        // Fallback
-      }
-
-      if (!newPart) {
-        newPart = {
-          id: crypto.randomUUID(),
-          display_name: cleanName,
-          score: 0,
-          room_id: room.id,
-        };
-      }
-
       const codeUpper = room.room_code.toUpperCase();
+      const existingId = localStorage.getItem(`quizstage-participant-${codeUpper}`) || undefined;
+
+      // Authoritatively join in Firebase Firestore
+      const newPart = await joinRoomInFirebase(codeUpper, cleanName, existingId);
+
       localStorage.setItem(`quizstage-participant-${codeUpper}`, newPart.id);
       localStorage.setItem(`quizstage-participant-data-${codeUpper}`, JSON.stringify(newPart));
 
-      // Store in local participants list for host/projector to read
-      try {
-        const key = `quizstage-participants-${codeUpper}`;
-        const existing = JSON.parse(localStorage.getItem(key) || "[]");
-        if (!existing.some((p: any) => p.id === newPart.id)) {
-          existing.push(newPart);
-          localStorage.setItem(key, JSON.stringify(existing));
-        }
-      } catch {}
-      setParticipant(newPart);
+      setParticipant(newPart as any);
 
       // Broadcast join event
       try {
-        const bc = new BroadcastChannel(`quizstage-room-${room.room_code.toUpperCase()}`);
+        const bc = new BroadcastChannel(`quizstage-room-${codeUpper}`);
         bc.postMessage({ type: "PARTICIPANT_JOINED", participant: newPart });
         bc.close();
       } catch {}
@@ -446,25 +372,19 @@ export function ParticipantLivePage() {
     setSelectedOption(option);
 
     try {
-      try {
-        await supabase.from("answers").insert({
-          room_id: room.id,
-          participant_id: participant.id,
-          slide_id: currentSlide.id,
-          selected_answer: option,
-        });
-      } catch {
-        // Local fallback
-      }
+      const codeUpper = room.room_code.toUpperCase();
+
+      // Authoritatively submit answer to Firebase Firestore
+      await submitAnswerInFirebase(codeUpper, participant.id, currentSlide.id, option);
 
       // Broadcast answer to host & projector
       try {
-        const bc = new BroadcastChannel(`quizstage-room-${room.room_code.toUpperCase()}`);
+        const bc = new BroadcastChannel(`quizstage-room-${codeUpper}`);
         bc.postMessage({
           type: "ANSWER_SUBMITTED",
           answer: {
-            id: crypto.randomUUID(),
-            room_id: room.id,
+            id: `${participant.id}_${currentSlide.id}`,
+            room_code: codeUpper,
             participant_id: participant.id,
             selected_answer: option,
             slide_id: currentSlide.id,

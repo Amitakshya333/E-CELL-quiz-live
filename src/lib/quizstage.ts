@@ -1,4 +1,11 @@
 import { supabase } from "@/integrations/supabase/client";
+import {
+  createRoomInFirebase,
+  getQuizzesFromFirebase,
+  saveQuizInFirebase,
+  getCanonicalStartupDeck,
+  type FirebaseSlide,
+} from "./firebase-quiz";
 
 export const DEMO_QUIZ_ID = "20000000-0000-4000-8000-000000000001";
 
@@ -204,38 +211,23 @@ export async function getQuizSummaries(ownerId: string) {
 
   let cloudSummaries: QuizSummary[] = [];
   try {
-    // Fetch user quizzes OR public demo quizzes
-    const { data: quizzes, error } = await supabase
-      .from("quizzes")
-      .select("id,title,description,status,created_at,presentation_id,owner_id")
-      .or(`owner_id.eq.${ownerId},owner_id.is.null`)
-      .order("created_at", { ascending: false });
-
-    if (!error && quizzes && quizzes.length > 0) {
-      cloudSummaries = (
-        await Promise.all(
-          quizzes.map(async (quiz) => {
-            const [{ data: slides }, { data: presentation }, { data: questions }] = await Promise.all([
-              supabase.from("slides").select("id").eq("quiz_id", quiz.id),
-              quiz.presentation_id
-                ? supabase.from("presentations").select("page_count,original_file_name").eq("id", quiz.presentation_id).maybeSingle()
-                : Promise.resolve({ data: null }),
-              supabase.from("slides").select("id").eq("quiz_id", quiz.id).eq("slide_type", "quiz"),
-            ]);
-
-            return {
-              ...quiz,
-              slideCount: slides?.length ?? 8,
-              questionCount: questions?.length ?? 3,
-              pageCount: presentation?.page_count ?? slides?.length ?? 8,
-              fileName: presentation?.original_file_name ?? "can-you-crack-the-startup.pdf",
-            } satisfies QuizSummary;
-          })
-        )
-      ).filter((s) => !deletedIds.includes(s.id));
+    const fbQuizzes = await getQuizzesFromFirebase(ownerId);
+    if (fbQuizzes && fbQuizzes.length > 0) {
+      cloudSummaries = fbQuizzes.map((fq) => ({
+        id: fq.id,
+        title: fq.title,
+        description: fq.description,
+        status: fq.status,
+        created_at: fq.created_at,
+        slideCount: fq.slide_count,
+        questionCount: fq.question_count,
+        pageCount: fq.page_count,
+        fileName: fq.file_name || null,
+        owner_id: fq.owner_id,
+      }));
     }
-  } catch {
-    // Cloud query failed
+  } catch (err) {
+    console.warn("Firebase quiz summary error:", err);
   }
 
   // Combine local and cloud quizzes without duplicates, strictly omitting deleted quizzes
@@ -280,26 +272,23 @@ function makeRoomCode() {
 }
 
 export async function createRoom(quizId: string, ownerId: string) {
-  // 1. Try Supabase cloud insert
+  // 1. Authoritative Firebase Firestore room creation
   try {
-    for (let attempt = 0; attempt < 3; attempt += 1) {
-      const code = makeRoomCode();
-      const { data, error } = await supabase
-        .from("rooms")
-        .insert({ quiz_id: quizId, owner_id: ownerId, room_code: code })
-        .select("id,room_code")
-        .single();
+    const localQuiz = getLocalQuizById(quizId);
+    const localSlides = getLocalSlides(quizId);
+    const title = localQuiz?.title || (quizId === DEMO_QUIZ_ID ? "CAN YOU CRACK THE STARTUP?" : "Live Quiz");
 
-      if (!error && data) return data;
-    }
-  } catch {
-    // Continue to local room creation
+    const firebaseRoom = await createRoomInFirebase(quizId, ownerId, title, localSlides || undefined);
+    saveLocalRoom(firebaseRoom);
+    return { id: firebaseRoom.room_code, room_code: firebaseRoom.room_code };
+  } catch (err) {
+    console.warn("Firebase room creation error, falling back to local:", err);
   }
 
   // 2. High-reliability fallback room
   const localCode = makeRoomCode();
   const localRoom = {
-    id: crypto.randomUUID(),
+    id: localCode,
     quiz_id: quizId,
     owner_id: ownerId,
     room_code: localCode,
@@ -395,10 +384,23 @@ export async function createQuizFromPdf(file: File, ownerId: string) {
     id: `slide-${createdQuizId}-${index + 1}`,
     slide_number: index + 1,
     page_number: index + 1,
-    slide_type: index === 0 ? "normal" : index === 1 ? "join" : "normal",
+    slide_type: index === 0 ? ("normal" as const) : index === 1 ? ("join" as const) : ("normal" as const),
     question_metadata: null,
   }));
   saveLocalSlides(createdQuizId, localSlides);
+
+  try {
+    await saveQuizInFirebase({
+      id: createdQuizId,
+      title: title.toUpperCase(),
+      description: `Presentation uploaded from ${file.name}`,
+      owner_id: ownerId,
+      slides: localSlides as any,
+      file_name: file.name,
+    });
+  } catch (err) {
+    console.warn("Could not sync quiz to Firebase Firestore:", err);
+  }
 
   return createdQuizId;
 }

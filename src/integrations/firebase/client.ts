@@ -9,6 +9,8 @@ import {
   type User,
 } from "firebase/auth";
 
+import { getFirestore } from "firebase/firestore";
+
 export const firebaseConfig = {
   projectId: "suiit-campus-nexus-12345",
   appId: "1:79912759981:web:2d7fd67b13778891c0cc24",
@@ -21,6 +23,7 @@ export const firebaseConfig = {
 
 export const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
 export const auth = getAuth(app);
+export const db = getFirestore(app);
 export const googleProvider = new GoogleAuthProvider();
 googleProvider.setCustomParameters({ prompt: "select_account" });
 
